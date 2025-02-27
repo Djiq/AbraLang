@@ -1,0 +1,45 @@
+
+use serde::{Deserialize, Serialize};
+
+use crate::{typedata::Type, value::*};
+
+#[derive(Debug,Clone,Deserialize,Serialize)]
+pub enum ByteCode {
+    PUSH(StaticValue),
+    POP,
+    DUP,
+    ADD,
+    SUB,
+    MULT,
+    DIV,
+    MOD,
+    JMPABS(isize),
+    JMPREL(isize),
+    JMPTO(String),
+    EQUALS,
+    LESSER,
+    GREATER,
+    NEGATE,
+    EQLESS,
+    EQGREAT,
+    CAST(Type),
+    AND,
+    OR,
+    XOR,
+    JITL(String),
+    JITA(isize),
+    JITR(isize),
+    GETVARLOCAL(String),
+    SAVEVARLOCAL(String),
+    GETVARGLOBAL(String),
+    SAVEVARGLOBAL(String),
+    DEFVAR(String),
+    DROPVAR(String),
+    CALL(String),
+    SHOW,
+    RET(bool),
+    EXIT,
+    INSTANCE(StaticValue),
+    GETFROMREF,
+    SAVETOREF
+}
