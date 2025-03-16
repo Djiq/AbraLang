@@ -1,9 +1,8 @@
-
 use serde::{Deserialize, Serialize};
 
-use crate::{typedata::Type, value::*};
+use crate::{object::ObjectInitializer, typedata::Type, value::*};
 
-#[derive(Debug,Clone,Deserialize,Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ByteCode {
     PUSH(StaticValue),
     POP,
@@ -39,7 +38,7 @@ pub enum ByteCode {
     SHOW,
     RET(bool),
     EXIT,
-    INSTANCE(StaticValue),
+    INSTANCE(ObjectInitializer),
     GETFROMREF,
-    SAVETOREF
+    SAVETOREF,
 }

@@ -1,5 +1,8 @@
-use crate::*;
-use std::{io::BufRead, process::Command, sync::MutexGuard};
+use crate::{
+    object::{ObjectInitializer, Ref, RefHeader, RefObject},
+    *,
+};
+use std::{io::BufRead, process::Command, rc::Rc, sync::MutexGuard};
 
 /*
     R0 - LONG-LASTING REGISTER 0
@@ -17,9 +20,8 @@ use std::{io::BufRead, process::Command, sync::MutexGuard};
     RSP - STACK FRAME POINTER
 */
 pub struct ByteCodeMachine {
-    heap: Vec<RefHeader>,
     bytecode: Vec<ByteCode>,
-    labels: HashMap<String,usize>,
+    labels: HashMap<String, usize>,
     registers: [Value; 16],
     global_variables: HashMap<String, Value>,
     stack_frames: Vec<StackFrame>,
@@ -39,32 +41,38 @@ struct StackFrame {
     stack_return_index: isize,
 }
 
-impl StackFrame{
-    fn new<T:Into<String>>(bytecode_ret_index: isize,stack_ret_index: isize,name : Option<T>) -> Self{
-        StackFrame{
+impl StackFrame {
+    fn new<T: Into<String>>(
+        bytecode_ret_index: isize,
+        stack_ret_index: isize,
+        name: Option<T>,
+    ) -> Self {
+        StackFrame {
             name: name.map_or(None, |s| Some(s.into())),
             local_variables: HashMap::new(),
             object: None,
             bytecode_return_index: bytecode_ret_index,
-            stack_return_index: stack_ret_index
+            stack_return_index: stack_ret_index,
         }
     }
 }
 
-
 impl ByteCodeMachine {
-    pub fn new(code: Code,debug_mode : bool) -> Self {
+    pub fn new(code: Code, debug_mode: bool) -> Self {
         let mut slf = ByteCodeMachine {
-            heap: Vec::new(),
             bytecode: code.bytecode,
             registers: [const { Value::Null }; 16],
-            labels: code.labels.into_iter().map(|(k,v)| (k.into(),v)).collect(),
+            labels: code
+                .labels
+                .into_iter()
+                .map(|(k, v)| (k.into(), v))
+                .collect(),
             global_variables: HashMap::new(),
             stack_frames: Vec::new(),
             stack: [const { Value::Null }; 1028],
             debug_mode,
             debug_run: false,
-            debug_show_bytecode : false,
+            debug_show_bytecode: false,
             debug_show_stack: false,
             debug_breakpoints: Vec::new(),
         };
@@ -77,92 +85,53 @@ impl ByteCodeMachine {
         slf
     }
 
-    fn instance(&mut self,object: StaticValue)-> anyhow::Result<Ref>{
-        for i in 0..self.heap.len(){
-            if self.heap[i].deleted {
-                match object {
-                    StaticValue::Array(x) => {
-                        self.heap[i] = RefHeader{
-                            id: i,
-                            gen: self.heap[i].gen + 1,
-                            deleted : false,
-                            references : 1,
-                            ref_type: Mutex::new(RefType::Array(x.iter().map(|val|val.clone().into()).collect()))
-                        };
-                        return Ok(Ref{
-                            id: i,
-                            gen: self.heap[i].gen
-                        });
-                    }
-                    _ => return Err(anyhow!("Requested to heap allocate a stack allocated object!")),
-                }
-            }
-        }
-        match object {
-            StaticValue::Array(x) => {
-                self.heap.push(RefHeader{
-                    id: self.heap.len(),
-                    gen: 0,
-                    deleted : false,
-                    references : 1,
-                    ref_type: Mutex::new(RefType::Array(x.iter().map(|val|val.clone().into()).collect()))
-                });
-                return Ok(Ref{
-                    id: self.heap.len()-1,
-                    gen: 0
-                });
-            }
-            _ => return Err(anyhow!("Requested to heap allocate a stack allocated object!")),
-        }
-    }
-
-    fn deref(&self,reference: Value) -> anyhow::Result<Option<MutexGuard<RefType>>> {
-        let dereference = reference.expect_ref()?;
-        let access = self.heap.get(dereference.id).ok_or(anyhow!("Bad ref!"))?;
-        if access.gen != dereference.gen || access.deleted{
-            return Ok(None);
-        }
-        let lock = access.ref_type.lock().ok().ok_or(anyhow!("Couldn't get access to a mutex lock guard!"))?;
-        Ok(Some(lock))
+    fn instance(&mut self, object: ObjectInitializer) -> Ref {
+        Ref::instance_with(Rc::new(Mutex::new(RefHeader::instance_with_initializer(
+            object,
+        ))))
     }
 
     fn delete(&mut self, reference: Value) -> anyhow::Result<()> {
-        let dereference = reference.expect_ref()?;
-        let access = self.heap.get_mut(dereference.id).ok_or(anyhow!("Bad ref!"))?;
-        access.deleted = true;
-        *access.ref_type.lock().ok().ok_or(anyhow!("Couldn't get access to a mutex lock guard!"))? = RefType::Null;
+        let rf = reference.expect_ref()?;
+        rf.delete();
         Ok(())
     }
 
-    fn debug_mode(&mut self) -> bool{
-        use std::io::{stdin,Read};
-        let mut stdin_handle = stdin().lock();  
-        let mut byte = [0_u8];  
+    fn debug_mode(&mut self) -> bool {
+        use std::io::{stdin, Read};
+        let mut stdin_handle = stdin().lock();
+        let mut byte = [0_u8];
         if self.debug_show_bytecode {
             println!("Bytecode:");
             let index = self.registers[11].expect_int().unwrap() as usize;
-            let (low_range,high_range) = (0.max(index as isize - 5) as usize,self.bytecode.len().min(index + 5));
+            let (low_range, high_range) = (
+                0.max(index as isize - 5) as usize,
+                self.bytecode.len().min(index + 5),
+            );
             for i in low_range..high_range {
-                print!("{} | {}",i,serde_json::to_string(&self.bytecode[i]).unwrap());
+                print!(
+                    "{} | {}",
+                    i,
+                    serde_json::to_string(&self.bytecode[i]).unwrap()
+                );
                 if i == index {
                     println!(" << CURRENT");
                 } else {
                     println!("");
                 }
-                
             }
         }
         if self.debug_show_stack {
             println!("Stack:");
             let stack_index = self.registers[10].expect_int().unwrap();
             let mut i = stack_index;
-            while i >= 0  &&  i + 10 >= stack_index{
-                if(i == stack_index){
-                    println!("{} | {} << HEAD",i,&self.stack[i as usize]);
+            while i >= 0 && i + 10 >= stack_index {
+                if (i == stack_index) {
+                    println!("{} | {} << HEAD", i, &self.stack[i as usize]);
                 } else {
-                    println!("{} | {}",i,&self.stack[i as usize]);
-                }   
-                
+                    println!("{} | {}", i, &self.stack[i as usize]);
+                }
+
                 i -= 1;
             }
         }
@@ -175,17 +144,17 @@ impl ByteCodeMachine {
                 }
                 break;
             }
-            stdin_handle.read_exact(&mut byte).unwrap(); 
+            stdin_handle.read_exact(&mut byte).unwrap();
             let character: char = byte[0] as char;
             //println!("{}",character);
             match character {
-                'c'|'C' => {
+                'c' | 'C' => {
                     self.debug_show_bytecode = !self.debug_show_bytecode;
                 }
-                's'|'S' => {
+                's' | 'S' => {
                     self.debug_show_stack = !self.debug_show_stack;
                 }
-                'b'|'B' => {
+                'b' | 'B' => {
                     let mut string = String::new();
                     stdin_handle.read_line(&mut string).unwrap();
                     let stop_on: usize = string.trim().parse().unwrap();
@@ -193,19 +162,19 @@ impl ByteCodeMachine {
                     self.debug_breakpoints.push(stop_on);
                     continue;
                 }
-                'r'|'R' => {
+                'r' | 'R' => {
                     self.debug_run = true;
                     break;
                 }
-                'n'|'N' => break,
-                'q'|'Q' => return true,
+                'n' | 'N' => break,
+                'q' | 'Q' => return true,
                 _ => {}
             }
         }
         false
     }
 
-    pub fn run(&mut self) -> usize{
+    pub fn run(&mut self) -> usize {
         loop {
             if self.debug_mode {
                 let q = self.debug_mode();
@@ -223,9 +192,12 @@ impl ByteCodeMachine {
                     return self.pop_from_stack().unwrap().expect_int().unwrap() as usize;
                 }
                 Err(e) => {
-                    println!("An error occureed!\n {}",e);
-                    for stack in &self.stack_frames{
-                        println!("From <{}>",stack.name.as_ref().unwrap_or(&"unknown".into()));
+                    println!("An error occureed!\n {}", e);
+                    for stack in &self.stack_frames {
+                        println!(
+                            "From <{}>",
+                            stack.name.as_ref().unwrap_or(&"unknown".into())
+                        );
                     }
                     return 1;
                 }
@@ -233,7 +205,7 @@ impl ByteCodeMachine {
         }
     }
 
-    fn pop_from_stack(&mut self) -> anyhow::Result<Value>{
+    fn pop_from_stack(&mut self) -> anyhow::Result<Value> {
         let stack_index = self.registers[10].expect_int()? as usize;
         let ret = Ok(self.stack[stack_index - 1].clone());
         self.registers[10] = self.registers[10].clone() - Value::Integer(1);
@@ -247,60 +219,23 @@ impl ByteCodeMachine {
         self.registers[10] = self.registers[10].clone() + Value::Integer(1);
         //println!("{}",self.registers[10]);
         Ok(())
-    }   
+    }
 
-    fn unwind_stack(&mut self) -> anyhow::Result<()>{
-        let stack_frame = self.stack_frames.pop().ok_or(anyhow!("Attempted to access stack frames while none are allocated!"))?;
-        for (_,v) in stack_frame.local_variables.iter() {
-            self.drop_if_ref(&v.clone())?
-        }
+    fn unwind_stack(&mut self) -> anyhow::Result<()> {
+        let stack_frame = self.stack_frames.pop().ok_or(anyhow!(
+            "Attempted to access stack frames while none are allocated!"
+        ))?;
         self.registers[11] = Value::Integer(stack_frame.bytecode_return_index);
         let current_stack_index = self.registers[10].expect_int()?;
-        for x in stack_frame.stack_return_index..current_stack_index{
-            let val  = self.stack[x as usize].clone();
-            self.drop_if_ref(&val)?;
+        for x in stack_frame.stack_return_index..current_stack_index {
+            self.stack[x as usize] = Value::Null;
         }
         self.registers[10] = Value::Integer(stack_frame.stack_return_index);
         Ok(())
     }
 
-    fn is_valid_ref(&self, rf: &Ref) -> bool {
-        let o_access = self.heap.get(rf.id);
-        if o_access.is_none() {
-            return false;
-        }
-        let access = o_access.unwrap();
-        if access.deleted || access.gen != rf.gen {
-            return false;
-        }
-        true
-    }
-
-    fn drop_if_ref(&mut self,val: &Value) -> anyhow::Result<()>{
-        if let Value::Ref(rf) = val {
-            if !self.is_valid_ref(&rf){
-                return Ok(())
-            }
-            self.heap[rf.id].references -= 1;
-            if self.heap[rf.id].references == 0{
-                self.delete(val.clone())?;
-            }
-        }
-        Ok(())
-    }
-
-    fn clone_value(&mut self,val: &Value) -> Value{
-        match val {
-            Value::Ref(rf) => {
-                if !self.is_valid_ref(rf){
-                    Value::Null
-                } else {
-                    self.heap[rf.id].references += 1;
-                    val.clone()
-                }
-            }
-            _ => val.clone(),
-        }
+    fn clone_value(&mut self, val: &Value) -> Value {
+        val.clone()
     }
 
     fn next(&mut self) -> anyhow::Result<bool> {
@@ -313,7 +248,6 @@ impl ByteCodeMachine {
             }
             ByteCode::POP => {
                 let val = self.pop_from_stack()?;
-                self.drop_if_ref(&val)?;
                 Ok(true)
             }
             ByteCode::ADD => {
@@ -364,7 +298,7 @@ impl ByteCodeMachine {
                 }
                 Ok(true)
             }
-            ByteCode::JITL(label)=> {
+            ByteCode::JITL(label) => {
                 let boolean = self.pop_from_stack()?.expect_bool()?;
                 if boolean {
                     let new_stack_index = self.labels[&label] as isize - 1;
@@ -372,7 +306,7 @@ impl ByteCodeMachine {
                 }
                 Ok(true)
             }
-            ByteCode::JITR(offset)=> {
+            ByteCode::JITR(offset) => {
                 let boolean = self.pop_from_stack()?.expect_bool()?;
                 if boolean {
                     self.registers[11] = Value::Integer(index as isize + offset - 1);
@@ -420,13 +354,13 @@ impl ByteCodeMachine {
                 self.push_to_stack(&Value::Bool(a <= b))?;
                 Ok(true)
             }
-            ByteCode::GREATER  => {
+            ByteCode::GREATER => {
                 let a = self.pop_from_stack()?;
                 let b = self.pop_from_stack()?;
                 self.push_to_stack(&Value::Bool(a > b))?;
                 Ok(true)
             }
-            ByteCode::LESSER  => {
+            ByteCode::LESSER => {
                 let a = self.pop_from_stack()?;
                 let b = self.pop_from_stack()?;
                 self.push_to_stack(&Value::Bool(a < b))?;
@@ -441,56 +375,115 @@ impl ByteCodeMachine {
             ByteCode::SAVEVARGLOBAL(name) => {
                 let a = self.pop_from_stack()?;
                 if self.global_variables.contains_key(&name) {
-                    let val = self.global_variables.get(&name).ok_or(anyhow!("Bad variable name while saving a variable!"))?.clone();
-                    self.drop_if_ref(&val)?;
-                    *self.global_variables.get_mut(&name).ok_or(anyhow!("Bad variable name while saving a variable!"))? = a;
+                    let val = self
+                        .global_variables
+                        .get(&name)
+                        .ok_or(anyhow!("Bad variable name while saving a variable!"))?
+                        .clone();
+                    *self
+                        .global_variables
+                        .get_mut(&name)
+                        .ok_or(anyhow!("Bad variable name while saving a variable!"))? = a;
                 } else {
                     self.global_variables.insert(name.to_string(), a);
                 }
                 Ok(true)
             }
             ByteCode::GETVARGLOBAL(name) => {
-
-                let value = self.global_variables.get(&name).ok_or(anyhow!("Attempted to access an undefined variable!"))?.clone();
+                let value = self
+                    .global_variables
+                    .get(&name)
+                    .ok_or(anyhow!("Attempted to access an undefined variable!"))?
+                    .clone();
                 let cloned_val = self.clone_value(&value);
                 self.push_to_stack(&cloned_val)?;
-               
+
                 Ok(true)
             }
             ByteCode::SAVEVARLOCAL(name) => {
                 if self.stack_frames.is_empty() {
-                    return Err(anyhow!("Attempted to access stack frames while none are allocated!"));
+                    return Err(anyhow!(
+                        "Attempted to access stack frames while none are allocated!"
+                    ));
                 }
                 let a = self.pop_from_stack()?;
-                let b = self.stack_frames.last().ok_or(anyhow!("Attempted to access stack frames while none are allocated!"))?.local_variables.contains_key(&name);
+                let b = self
+                    .stack_frames
+                    .last()
+                    .ok_or(anyhow!(
+                        "Attempted to access stack frames while none are allocated!"
+                    ))?
+                    .local_variables
+                    .contains_key(&name);
                 if b {
-                    let val = self.stack_frames.last_mut().ok_or(anyhow!("Attempted to access stack frames while none are allocated!"))?.local_variables.get(&name).ok_or(anyhow!("Attempted to access stack frame variables while none are allocated!"))?.clone();
-                    self.drop_if_ref(&val)?;
-                    *self.stack_frames.last_mut().ok_or(anyhow!("Attempted to access stack frames while none are allocated!"))?.local_variables.get_mut(&name).ok_or(anyhow!("Attempted to access stack frame variables while none are allocated!"))? = a;
+                    let val = self
+                        .stack_frames
+                        .last_mut()
+                        .ok_or(anyhow!(
+                            "Attempted to access stack frames while none are allocated!"
+                        ))?
+                        .local_variables
+                        .get(&name)
+                        .ok_or(anyhow!(
+                            "Attempted to access stack frame variables while none are allocated!"
+                        ))?
+                        .clone();
+                    *self
+                        .stack_frames
+                        .last_mut()
+                        .ok_or(anyhow!(
+                            "Attempted to access stack frames while none are allocated!"
+                        ))?
+                        .local_variables
+                        .get_mut(&name)
+                        .ok_or(anyhow!(
+                            "Attempted to access stack frame variables while none are allocated!"
+                        ))? = a;
                 } else {
-                    self.stack_frames.last_mut().ok_or(anyhow!("Attempted to access stack frames while none are allocated!"))?.local_variables.insert(name.to_string(), a);
+                    self.stack_frames
+                        .last_mut()
+                        .ok_or(anyhow!(
+                            "Attempted to access stack frames while none are allocated!"
+                        ))?
+                        .local_variables
+                        .insert(name.to_string(), a);
                 }
                 Ok(true)
             }
             ByteCode::GETVARLOCAL(name) => {
                 if self.stack_frames.is_empty() {
-                    return Err(anyhow!("Attempted to access stack frames while none are allocated!"));
+                    return Err(anyhow!(
+                        "Attempted to access stack frames while none are allocated!"
+                    ));
                 }
-                
-                let value = self.stack_frames.last().ok_or(anyhow!("Attempted to access stack frames while none are allocated!"))?.local_variables.get(&name).ok_or(anyhow!("Attempted to access an undefined variable!"))?.clone();
+
+                let value = self
+                    .stack_frames
+                    .last()
+                    .ok_or(anyhow!(
+                        "Attempted to access stack frames while none are allocated!"
+                    ))?
+                    .local_variables
+                    .get(&name)
+                    .ok_or(anyhow!("Attempted to access an undefined variable!"))?
+                    .clone();
                 let cloned_val = self.clone_value(&value);
                 self.push_to_stack(&cloned_val)?;
-               
+
                 Ok(true)
             }
             ByteCode::CALL(func) => {
-                self.stack_frames.push(StackFrame::new(index as isize,self.registers[10].expect_int()?,Some(&func)));
+                self.stack_frames.push(StackFrame::new(
+                    index as isize,
+                    self.registers[10].expect_int()?,
+                    Some(&func),
+                ));
                 let new_bc_index = self.labels[&func] as isize - 1;
                 self.registers[11] = Value::Integer(new_bc_index);
                 Ok(true)
             }
             ByteCode::RET(return_value) => {
-                let mut returning_value : Option<Value> = None;
+                let mut returning_value: Option<Value> = None;
                 if return_value {
                     returning_value = Some(self.pop_from_stack()?);
                 }
@@ -500,55 +493,62 @@ impl ByteCodeMachine {
                 }
                 Ok(true)
             }
-            ByteCode::EXIT =>{
-                Ok(false)
-            },
+            ByteCode::EXIT => Ok(false),
             ByteCode::INSTANCE(value) => {
-                let rf = self.instance(value)?;
+                let rf = self.instance(value);
                 self.push_to_stack(&Value::Ref(rf))?;
                 Ok(true)
-            },
+            }
             ByteCode::GETFROMREF => {
                 let value = {
-                    let rf = self.pop_from_stack()?;
+                    let rf = self.pop_from_stack()?.expect_ref()?;
                     let offset = self.pop_from_stack()?;
-                    let arr = self.deref(rf)?.unwrap();
-                    arr.get(&offset)?
+                    rf.get(&offset)?
                 };
 
                 self.push_to_stack(&value)?;
                 Ok(true)
-            },
+            }
             ByteCode::SAVETOREF => {
                 let value = self.pop_from_stack()?;
-                let rf = self.pop_from_stack()?;
+                let rf = self.pop_from_stack()?.expect_ref()?;
                 let offset = self.pop_from_stack()?;
-                let mut arr = self.deref(rf)?.unwrap();
-                arr.modify(&offset, value)?;
+                rf.modify(&offset, value)?;
 
                 Ok(true)
-            },
+            }
             ByteCode::DEFVAR(string) => {
                 let val = self.pop_from_stack()?;
-                self.stack_frames.last_mut().ok_or(anyhow!("Attempted to access stack frames while none are allocated!"))?.local_variables.insert(string, val);
+                self.stack_frames
+                    .last_mut()
+                    .ok_or(anyhow!(
+                        "Attempted to access stack frames while none are allocated!"
+                    ))?
+                    .local_variables
+                    .insert(string, val);
                 Ok(true)
-            },
+            }
             ByteCode::DROPVAR(string) => {
-                self.stack_frames.last_mut().ok_or(anyhow!("Attempted to access stack frames while none are allocated!"))?.local_variables.remove_entry(&string);
+                self.stack_frames
+                    .last_mut()
+                    .ok_or(anyhow!(
+                        "Attempted to access stack frames while none are allocated!"
+                    ))?
+                    .local_variables
+                    .remove_entry(&string);
                 Ok(true)
-            },
-           ByteCode::CAST(typ) => {
+            }
+            ByteCode::CAST(typ) => {
                 let val = self.pop_from_stack()?;
                 self.push_to_stack(&val.cast(typ)?)?;
                 Ok(true)
-           },
-           ByteCode::MOD => {
+            }
+            ByteCode::MOD => {
                 let a = self.pop_from_stack()?;
                 let b = self.pop_from_stack()?;
-                self.push_to_stack(&Value::Integer( a.expect_int()? % b.expect_int()?))?;
+                self.push_to_stack(&Value::Integer(a.expect_int()? % b.expect_int()?))?;
                 Ok(true)
-           }
-           // _ => Ok(true),
+            } // _ => Ok(true),
         }
     }
 }

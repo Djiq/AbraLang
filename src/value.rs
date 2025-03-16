@@ -1,10 +1,12 @@
-
-
-use std::fmt::format;
+use std::{fmt::format, ops::Index, rc::Rc};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{typedata::RefType, *};
+use crate::{
+    object::{ObjectInitializer, Ref, RefObject},
+    typedata::ObjectType,
+    *,
+};
 
 macro_rules! value_implements {
     ($t:ty,$t_func:ident) => {
@@ -16,7 +18,9 @@ macro_rules! value_implements {
                 match (self, rhs) {
                     (Value::Integer(a), Value::Integer(b)) => Value::Integer(a.$t_func(b)),
                     (Value::Float(a), Value::Float(b)) => Value::Float(a.$t_func(b)),
-                    (Value::Char(a), Value::Char(b)) => Value::Char((a as u8).$t_func(b as u8) as char),
+                    (Value::Char(a), Value::Char(b)) => {
+                        Value::Char((a as u8).$t_func(b as u8) as char)
+                    }
                     (_, _) => Value::Null,
                 }
             }
@@ -34,8 +38,12 @@ macro_rules! cast_to {
                 Value::Integer(x) => Ok(*x as $type),
                 Value::String(x) => {
                     let type_cast = x.parse();
-                    if type_cast.is_err(){
-                        return Err(anyhow!("Bad cast error! tried to coerce string: {} to type {}",x,stringify!($type)));
+                    if type_cast.is_err() {
+                        return Err(anyhow!(
+                            "Bad cast error! tried to coerce string: {} to type {}",
+                            x,
+                            stringify!($type)
+                        ));
                     }
                     Ok(type_cast.unwrap())
                 }
@@ -45,7 +53,7 @@ macro_rules! cast_to {
     };
 }
 
-#[derive(Debug, Clone, Default ,Deserialize,Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub enum StaticValue {
     #[default]
     Null,
@@ -54,14 +62,8 @@ pub enum StaticValue {
     Char(char),
     Bool(bool),
     String(String),
-    Object(Type,Vec<StaticValue>)
+    Object(ObjectInitializer),
 }
-
-pub struct ObjectInitializer{
-    typ: ObjectType,
-    init: Vec<StaticValue>
-}
-
 
 impl Into<Value> for StaticValue {
     fn into(self) -> Value {
@@ -72,10 +74,9 @@ impl Into<Value> for StaticValue {
             StaticValue::Char(c) => Value::Char(c),
             StaticValue::Integer(i) => Value::Integer(i),
             StaticValue::Float(f) => Value::Float(f),
-            StaticValue::Object(_, _) => Value::Null,
+            StaticValue::Object(_) => Value::Null,
         }
     }
-    
 }
 
 impl From<Value> for StaticValue {
@@ -87,12 +88,10 @@ impl From<Value> for StaticValue {
             //Value::Char(c) => StaticValue::Char(c),
             Value::Integer(i) => StaticValue::Integer(i),
             Value::Float(f) => StaticValue::Float(f),
-            _ => panic!()
+            _ => panic!(),
         }
     }
-
 }
-
 
 #[derive(Debug, Clone, Default)]
 pub enum Value {
@@ -107,38 +106,47 @@ pub enum Value {
 }
 
 impl Value {
+    pub fn get_string_representation(&self) -> String {
+        match self {
+            Value::Null => "null".into(),
+            Value::Bool(x) => format!("{}", x),
+            Value::Char(x) => format!("{}", x),
+            Value::Float(x) => format!("{}", x),
+            Value::Integer(x) => format!("{}", x),
+            Value::String(x) => format!("{}", x),
+            Value::Ref(x) => format!("Ref<{}>", x.get_uuid()),
+        }
+    }
 
-    pub fn cast(&self, to: typedata::Type) -> Result<Value>{
+    pub fn cast(&self, to: typedata::Type) -> Result<Value> {
         match to {
             Type::Bool => Ok(Value::Bool(self.cast_to_bool()?)),
             Type::Char => Ok(Value::Char(self.cast_to_int()? as u8 as char)),
-            Type::Ref(_) => Err(anyhow!("Ref is not a castable type!")),
+            Type::Object(_) => Err(anyhow!("Ref is not a castable type!")),
             Type::Float => Ok(Value::Float(self.cast_to_float()?)),
             Type::Int => Ok(Value::Integer(self.cast_to_int()?)),
-            Type::String => Ok(Value::String(format!("{}",&self)))
+            Type::String => Ok(Value::String(format!("{}", &self))),
         }
     }
 
     pub fn get_type(&self) -> Type {
         match &self {
+            Value::Null => panic!(),
             Value::Bool(_) => Type::Bool,
             Value::Char(_) => Type::Char,
             Value::Float(_) => Type::Float,
             Value::Integer(_) => Type::Float,
             Value::String(_) => Type::String,
-            Value::Ref(rf) => {
-                rf.rf_type.clone()
-            }
+            Value::Ref(rf) => rf.get_type(),
         }
     }
 
     cast_to!(cast_to_int, isize);
     cast_to!(cast_to_float, f64);
-   // cast_to!(cast_to_char, char);
+    // cast_to!(cast_to_char, char);
 
     pub fn cast_to_bool(&self) -> anyhow::Result<bool> {
         match self {
-            
             Value::Null => Err(anyhow!("Null not expected")),
             Value::Bool(x) => Ok(*x),
             Value::Integer(x) => Ok(*x != 0),
@@ -190,18 +198,25 @@ impl Value {
         }
         Err(anyhow!("expected ref"))
     }
+
+    pub fn expect_ref_extract(&self) -> anyhow::Result<&Ref> {
+        if let Value::Ref(x) = self {
+            return Ok(x);
+        }
+        Err(anyhow!("expected ref"))
+    }
 }
 
 impl Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Value::String(s) => write!(f,"{}",s),
+            Value::String(s) => write!(f, "{}", s),
             Value::Null => write!(f, ""),
             Value::Bool(x) => write!(f, "{}", x),
             Value::Integer(x) => write!(f, "{}", x),
             Value::Float(x) => write!(f, "{}", x),
             Value::Char(x) => write!(f, "{}", x),
-            Value::Ref(x) => write!(f, "{}", x.id),
+            Value::Ref(x) => write!(f, ""),
         }
     }
 }
@@ -266,64 +281,5 @@ impl PartialOrd for Value {
 
     fn le(&self, other: &Self) -> bool {
         self <= other
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Ref{
-    pub rf_type: Type,
-    pub id: usize,
-    pub gen: usize
-}
-
-pub struct RefHeader{
-    pub id: usize,
-    pub gen: usize,
-    pub deleted: bool,
-    pub references: usize,
-    pub ref_type: Mutex<RefType>,
-}
-
-#[derive(Debug, Clone)]
-pub enum RefType {
-    Null,
-    Array(Vec<Value>),
-}
-
-impl RefType{
-    pub fn get(&self,at: &Value) -> Result<Value>{
-        match self {
-            RefType::Null => Ok(Value::Null),
-            RefType::Array(arr) => {
-                let index = at.expect_int()?;
-                Ok(arr[index as usize].clone())
-            }
-        }
-    }
-
-    pub fn modify(&mut self, at: &Value, with: Value) -> Result<()> {
-        match self {
-            RefType::Null => Ok(()),
-            RefType::Array(arr) => {
-                let index = at.expect_int()?;
-                arr[index as usize] = with;
-                Ok(())
-            }
-        }
-    }
-}
-
-impl Display for RefType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            RefType::Null => write!(f,"null"),
-            RefType::Array(arr) => {
-                let s = arr
-                    .iter()
-                    .map(|v| v.to_string())
-                    .fold(String::new(), |acc, v| format!("{},{}", acc, v));
-                write!(f, "[{}]", s)
-            }
-        }
     }
 }

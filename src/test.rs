@@ -21,7 +21,7 @@ macro_rules! abra_compile_test {
                 }
 
             }
-        
+
             abra_compile_test!{$name}
         }
     };
@@ -40,7 +40,7 @@ macro_rules! abra_compile_test {
                 }
 
             }
-        
+
             abra_compile_test!{$name}
         }
     };
@@ -54,7 +54,7 @@ macro_rules! abra_compile_test {
                     panic!("Error!");
                 }
             }
-        
+
             abra_compile_test!{$name}
         }
     };
@@ -84,10 +84,10 @@ macro_rules! abra_compile_test {
         return (Some(code.clone()),Ok(ByteCodeMachine::new(code,false).run() as u64));
         }
     };
-    
-    
-}   
-abra_compile_test!{
+
+
+}
+abra_compile_test! {
     ok ok;
     fail fail;
     ok if_true;
@@ -101,4 +101,3 @@ abra_compile_test!{
     fail var_drop;
     ok fn_call
 }
-
