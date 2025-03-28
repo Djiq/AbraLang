@@ -1,4 +1,4 @@
-use crate::*;
+use crate::{token::{Token, TokenLiteral}, *};
 use serde::*;
 
 pub struct TokenData {
@@ -34,91 +34,6 @@ macro_rules! match_token {
     };
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, PartialOrd)]
-pub enum Token {
-    DColonDColon,
-    DColon,
-    Comma,
-    LParen,
-    RParen,
-    LBracket,
-    RBracket,
-    Plus,
-    PlusEquals,
-    Minus,
-    MinusEquals,
-    Slash,
-    SlashEquals,
-    Star,
-    StarEquals,
-    Equals,
-    EqualsEquals,
-    Greater,
-    Lesser,
-    EqualsGreater,
-    EqualsLesser,
-    RArrow,
-    LArrow,
-    EndLine,
-    Indent,
-    Bang,
-    BangEq,
-
-    Literal(TokenLiteral),
-    Func,
-    Int,
-    Float,
-    Char,
-    Bool,
-    String,
-    Print,
-    Return,
-    If,
-    Else,
-    For,
-    While,
-    Do,
-    Loop,
-    New,
-    EndOfFile,
-}
-
-impl Display for Token {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = serde_json::to_string(self).unwrap();
-        write!(f, "{}", &s)
-    }
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, PartialOrd)]
-pub enum TokenLiteral {
-    Identifier(String),
-    Integer(isize),
-    Float(f64),
-    Bool(bool),
-    Char(char),
-    String(String),
-}
-
-impl TokenLiteral {
-    pub fn to_static_value(&self) -> StaticValue {
-        match self.clone() {
-            TokenLiteral::Bool(a) => StaticValue::Bool(a),
-            TokenLiteral::Char(c) => StaticValue::Char(c),
-            TokenLiteral::Float(f) => StaticValue::Float(f),
-            TokenLiteral::Identifier(ident) => StaticValue::Null,
-            TokenLiteral::Integer(i) => StaticValue::Integer(i),
-            TokenLiteral::String(s) => StaticValue::String(s),
-        }
-    }
-}
-
-impl Display for TokenLiteral {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = serde_json::to_string(self).unwrap();
-        write!(f, "{}", &s)
-    }
-}
 
 pub fn tokenize(file: String) -> Result<Vec<TokenData>> {
     let mut errors: Vec<anyhow::Error> = Vec::new();
@@ -258,13 +173,13 @@ fn parse_line(line: &str, line_num: usize) -> Result<Vec<TokenData>> {
                         let next_char = iter.next().unwrap().1;
                         match next_char {
                             'n' => ret.push(token_to_tokendata!(Token::Literal(
-                                TokenLiteral::Char('\n')
-                            ))),
+                                TokenLiteral::Value(StaticValue::Char('\n')
+                            )))),
                             _ => println!("{}", next_char),
                         }
                         iter.next();
                     }
-                    x => ret.push(token_to_tokendata!(Token::Literal(TokenLiteral::Char(x)))),
+                    x => ret.push(token_to_tokendata!(Token::Literal(TokenLiteral::Value(StaticValue::Char(x))))),
                 }
                 iter.next();
             }
@@ -290,7 +205,7 @@ fn parse_line(line: &str, line_num: usize) -> Result<Vec<TokenData>> {
                 }
                 iter.next();
                 ret.push(token_to_tokendata_string!(
-                    Token::Literal(TokenLiteral::String(s)),
+                    Token::Literal(TokenLiteral::Value(StaticValue::String(s))),
                     s
                 ));
             }
@@ -315,16 +230,16 @@ fn parse_line(line: &str, line_num: usize) -> Result<Vec<TokenData>> {
                     }
                     if is_float {
                         ret.push(token_to_tokendata_string!(
-                            Token::Literal(TokenLiteral::Float(
+                            Token::Literal(TokenLiteral::Value(StaticValue::Float(
                                 s.parse().ok().ok_or(anyhow!("Parsing error"))?
-                            )),
+                            ))),
                             s
                         ));
                     } else {
                         ret.push(token_to_tokendata_string!(
-                            Token::Literal(TokenLiteral::Integer(
+                            Token::Literal(TokenLiteral::Value(StaticValue::Integer(
                                 s.parse().ok().ok_or(anyhow!("Parsing error"))?
-                            )),
+                            ))),
                             s
                         ));
                     }
@@ -342,11 +257,11 @@ fn parse_line(line: &str, line_num: usize) -> Result<Vec<TokenData>> {
                         "int" => ret.push(token_to_tokendata_string!(Token::Int, s)),
                         "float" => ret.push(token_to_tokendata_string!(Token::Float, s)),
                         "true" => ret.push(token_to_tokendata_string!(
-                            Token::Literal(TokenLiteral::Bool(true)),
+                            Token::Literal(TokenLiteral::Value(StaticValue::Bool(true))),
                             s
                         )),
                         "false" => ret.push(token_to_tokendata_string!(
-                            Token::Literal(TokenLiteral::Bool(false)),
+                            Token::Literal(TokenLiteral::Value(StaticValue::Bool(true))),
                             s
                         )),
                         "bool" => ret.push(token_to_tokendata_string!(Token::Bool, s)),

@@ -1,0 +1,144 @@
+use std::str::FromStr;
+use crate::*;
+use crate::ast::*;
+use crate::tokenizer::*;
+
+grammar;
+
+// tutaj zainstalowalem LSP, wszystko ponizej tego komentarza bylo doslownie napisane w notatniku
+pub Statement: Statement = {
+    "var" <i:Identifier> ":" <t:Type> "=" <e:Expression> => Statement::Declare(i,t,*e.to_owned()),
+    <i:Identifier> "=" <e:Expression> => Statement::Assign(i,*e.to_owned()),
+    "print" <e:Expression> => Statement::Print(*e.to_owned()),
+    "return" <e:Expression?> => Statement::Return(e.map(|e| *e.to_owned())),
+    <e:Expression> => Statement::Expression(*e.to_owned()),
+};
+
+
+Expression: Box<Expression> = {
+    Eq
+};
+
+Eq: Box<Expression> = {
+    <a:Comp> "==" <b:Eq> => Box::new(Expression::Binary(BinOpCode::EQ,a,b)),
+    <a:Comp> "!=" <b:Eq> => Box::new(Expression::Binary(BinOpCode::NE,a,b)),
+    Comp
+};
+
+
+Comp: Box<Expression> = {
+    <t1: Term> <cmp: CompOpCode> <c1: Comp> => Box::new(Expression::Binary(cmp,t1,c1)),
+    Term
+};
+
+CompOpCode: BinOpCode = {
+    ">" => BinOpCode::GT,
+    ">=" => BinOpCode::GE,
+    "<=" => BinOpCode::LE,
+    "<" => BinOpCode::LT
+};
+
+Term: Box<Expression> = {
+    <e1:Factor> <op:TermOpCode> <e2:Term> => Box::new(Expression::Binary(op,e1,e2)),
+    Factor
+};
+
+TermOpCode: BinOpCode = {
+    "|" => BinOpCode::OR,
+    "^" => BinOpCode::XOR,
+    "&" => BinOpCode::AND,
+    "+" => BinOpCode::ADD,
+    "-" => BinOpCode::SUB,
+};
+
+Factor: Box<Expression> = {
+    <e1:Unary> <op:FactorOpCode> <e2:Factor> => Box::new(Expression::Binary(op,e1,e2)),
+    Unary
+};
+
+FactorOpCode: BinOpCode = {
+    "*" => BinOpCode::MULT,
+    "/" => BinOpCode::DIV,
+    "%" => BinOpCode::MOD
+};
+
+Unary: Box<Expression> ={
+    UnaryOpCode Unary => Box::new(Expression::Unary(<>)),
+    Primary
+};
+
+UnaryOpCode: UnaryOpCode = {
+    "!" => UnaryOpCode::NEG,
+    "-" => UnaryOpCode::NEG
+};
+
+Primary: Box<Expression> = {
+    <t:Identifier> "[" <e:Expression> "]" => Box::new(Expression::Access(t,e)),
+    TokenLiteral => Box::new(Expression::Literal(<>)),
+    "(" <e:Expression> ")" => Box::new(Expression::Grouping(e)),
+    <v1:r"(-?\d+)"> "->" <v2:r"(-?\d+)"> => {
+        let a = i64::from_str(v1).unwrap();
+        let b = i64::from_str(v2).unwrap();
+        Box::new(Expression::Instance(Type::Object(ObjectType::Array(Box::new(Type::Int))),(a..b).map(|v| Expression::Literal(TokenLiteral::Value(StaticValue::Integer(v)))).collect()))
+        },
+    <t:Type> "(" <lit:Comma<Expression>> ")" => {
+        match t {
+            Type::Object(obj_type) => {
+                match obj_type {
+                    ObjectType::Null => Box::new(Expression::Literal(TokenLiteral::Value(StaticValue::Null))),
+                    ObjectType::Array(typ) => Box::new(Expression::Instance(Type::Object(ObjectType::Array(typ.to_owned())),lit.iter().map(|e| *e.to_owned()).collect())),
+                    _ => lit[0].to_owned()
+                }
+            },
+            _ => {
+                lit[0].to_owned()
+            }
+        }
+    },
+    <f:Identifier> "(" <args:Comma<Expression>> ")" => {
+        Box::new(Expression::Call(f,args.iter().map(|e| *e.to_owned()).collect()))
+    },
+    "new" <t:Type> "(" <args:Comma<Expression>> ")" => {
+        Box::new(Expression::Instance(t,args.iter().map(|e| *e.to_owned()).collect()))
+    }
+    
+};
+
+Comma<T>: Vec<T> = { // (0)
+    <mut v:(<T> ",")*> <e:T?> => match e { // (1)
+        None=> v,
+        Some(e) => {
+            v.push(e);
+            v
+        }
+    }
+};
+
+Type: Type = {
+    "bool" => Type::Bool,
+    "char" => Type::Char,
+    "float" => Type::Float,
+    "int" => Type::Int,
+    "[" <t:Type> "]" => Type::Object(ObjectType::Array(Box::new(t))),
+    "<" <t1:Type> ":" <t2:Type> ">" => Type::Object(ObjectType::Map(Box::new(t1),Box::new(t2)))
+};
+
+TokenLiteral: TokenLiteral = {
+    Value => TokenLiteral::Value(<>),
+    Identifier => TokenLiteral::Identifier(<>)
+};
+
+Value: StaticValue = {
+    r"(-?\d+)" => StaticValue::Integer(i64::from_str(<>).unwrap()),
+    r"-?(?:\d+\.\d*|\.\d+)(?:[eE][-+]?\d+)?" => StaticValue::Float(f64::from_str(<>).unwrap()),
+    r#""([\w\d\s]*)""# => StaticValue::String(String::from(<>)),
+    r"'(?:\\.|[^'])'" => StaticValue::Char(<>.chars().next().unwrap()),
+    "'\n'" => StaticValue::Char('\n'),
+    "true" => StaticValue::Bool(true),
+    "false" => StaticValue::Bool(false),
+    "null" => StaticValue::Null,
+};
+
+Identifier: String = {
+    r"([a-zA-Z_][a-zA-Z0-9_]*)" => String::from(<>)
+};

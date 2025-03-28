@@ -10,7 +10,7 @@ use crate::{
     typedata::{ObjectType, Type},
     value::{StaticValue, Value},
 };
-use anyhow::anyhow;
+use anyhow::{anyhow, Ok};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
@@ -57,22 +57,23 @@ pub struct RefHeader {
     pub ref_object: RefObject,
 }
 impl RefHeader {
-    pub fn instance_with_initializer(init: ObjectInitializer) -> Self {
+    pub fn instance_with_initializer(typ: ObjectType, args: Vec<Value>) -> Self {
         static COUNTER: AtomicUsize = AtomicUsize::new(0);
         RefHeader {
             deleted: false,
             uuid: COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-            ref_object: init.instance_self(),
+            ref_object: typ.instance_self(args),
         }
     }
 
     pub fn get_type(&self) -> Type {
         match &self.ref_object {
             RefObject::Map(t1, t2, map) => {
-                Type::Object(ObjectType::Map(Box::new(t1.clone()), Box::new(t2.clone())))
-            }
+                        Type::Object(ObjectType::Map(Box::new(t1.clone()), Box::new(t2.clone())))
+                    }
             RefObject::Array(typ, val) => Type::Object(ObjectType::Array(Box::new(typ.clone()))),
             RefObject::Null => Type::Object(ObjectType::Null),
+            RefObject::BoxedValue(value) => Type::Object(ObjectType::BoxedValue),
         }
     }
 
@@ -81,9 +82,10 @@ impl RefHeader {
             RefObject::Map(t1, t2, map) => Ok(map[&at.get_string_representation()].clone()),
             RefObject::Null => Err(anyhow!("Cannot dereference null")),
             RefObject::Array(typ, arr) => {
-                let index = at.expect_int()?;
-                Ok(arr[index as usize].clone())
-            }
+                        let index = at.expect_int()?;
+                        Ok(arr[index as usize].clone())
+                    }
+            RefObject::BoxedValue(value) => Ok(value.clone()),
         }
     }
 
@@ -103,6 +105,10 @@ impl RefHeader {
                 arr[index as usize] = with;
                 Ok(())
             }
+            RefObject::BoxedValue(value) => {
+                *value = with.clone();
+                Ok(())
+            },
         }
     }
 }
@@ -110,6 +116,7 @@ impl RefHeader {
 #[derive(Debug, Clone)]
 pub enum RefObject {
     Null,
+    BoxedValue(Value),
     Array(Type, Vec<Value>),
     Map(Type, Type, HashMap<String, Value>),
 }
@@ -118,49 +125,26 @@ impl Display for RefObject {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             RefObject::Map(t1, t2, map) => {
-                write!(f, "<>")
-            }
+                        write!(f, "<>")
+                    }
             RefObject::Null => write!(f, "null"),
             RefObject::Array(typ, arr) => {
-                let s = arr
-                    .iter()
-                    .map(|v| v.to_string())
-                    .fold(String::new(), |acc, v| format!("{},{}", acc, v));
-                write!(f, "[{}]", s)
-            }
+                        let s = arr
+                            .iter()
+                            .map(|v| v.to_string())
+                            .fold(String::new(), |acc, v| format!("{},{}", acc, v));
+                        write!(f, "[{}]", s)
+                    }
+RefObject::BoxedValue(value) => todo!(),
         }
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, PartialOrd)]
 pub struct ObjectInitializer {
     pub typ: ObjectType,
-    pub init: Vec<StaticValue>,
 }
 
 impl ObjectInitializer {
-    pub fn instance_self(&self) -> RefObject {
-        match &self.typ {
-            ObjectType::Abra(_) => {
-                todo!()
-            }
-            ObjectType::Map(t1, t2) => {
-                let mut map = HashMap::new();
-                let objects = self.init.len() / 2;
-                let init_clone = self.init.clone();
-                for x in 0..objects {
-                    let key: Value = init_clone[2 * x].clone().into();
-                    let value = &init_clone[2 * x + 1];
-                    map.insert(key.get_string_representation(), value.clone().into());
-                }
-
-                RefObject::Map(*t1.clone(), *t2.clone(), map)
-            }
-            ObjectType::Null => panic!(),
-            ObjectType::Array(typ) => RefObject::Array(
-                *typ.clone(),
-                self.clone().init.into_iter().map(|x| x.into()).collect(),
-            ),
-        }
-    }
+    
 }

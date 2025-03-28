@@ -1,49 +1,4 @@
-use crate::*;
-
-pub struct Function {
-    pub name: String,
-    pub return_type: Token,
-    pub body: Vec<Statement>,
-}
-
-pub enum Expression {
-    Literal(TokenLiteral),
-    Unary(Token, Box<Expression>),
-    Binary(Token, Box<Expression>, Box<Expression>),
-    Grouping(Box<Expression>),
-    Call(TokenLiteral, Vec<Expression>),
-    List(Type, Vec<TokenLiteral>),
-    Access(TokenLiteral, Box<Expression>),
-}
-
-impl Display for Expression {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self {
-            Expression::Call(func, args) => write!(f, "{}", func),
-            Expression::Literal(x) => write!(f, "[{}]", x),
-            Expression::Binary(op, l, r) => write!(f, "[{} {} {}]", l, op, r),
-            Expression::Unary(op, x) => write!(f, "[{} {}]", op, x),
-            Expression::Grouping(x) => write!(f, "[ ( {} ) ]", x),
-            _ => write!(f, ""),
-        }
-    }
-}
-
-pub enum Statement {
-    Declare(String, Type, Expression),
-    Assign(String, Expression),
-    Expression(Expression),
-    Print(Expression),
-    Return(Option<Expression>),
-    If(Expression, Vec<Statement>, Option<Vec<Statement>>),
-    For(
-        Box<Statement>,
-        Expression,
-        Box<Statement>,
-        Option<Vec<Statement>>,
-    ),
-    Null,
-}
+use crate::{ast::{Expression, Function, Statement}, token::{Token, TokenLiteral}, *};
 
 macro_rules! match_token {
     ($self:ident,$pattern:pat $(if $guard:expr)? $(,)?) => {
@@ -511,7 +466,7 @@ impl Parser {
                     self.tokens[self.index - 1].token()
                 )
             })?;
-            expr = Expression::Binary(op, Box::new(expr), Box::new(rhs));
+            expr = Expression::Binary(op.into(), Box::new(expr), Box::new(rhs));
         }
         Ok(expr)
     }
@@ -536,7 +491,7 @@ impl Parser {
                     self.tokens[self.index - 1].token()
                 )
             })?;
-            expr = Expression::Binary(op, Box::new(expr), Box::new(rhs));
+            expr = Expression::Binary(op.into(), Box::new(expr), Box::new(rhs));
         }
         Ok(expr)
     }
@@ -558,7 +513,7 @@ impl Parser {
                     self.tokens[self.index - 1].token()
                 )
             })?;
-            expr = Expression::Binary(op, Box::new(expr), Box::new(rhs));
+            expr = Expression::Binary(op.into(), Box::new(expr), Box::new(rhs));
         }
         Ok(expr)
     }
@@ -580,7 +535,7 @@ impl Parser {
                     self.tokens[self.index - 1].token()
                 )
             })?;
-            expr = Expression::Binary(op, Box::new(expr), Box::new(rhs));
+            expr = Expression::Binary(op.into(), Box::new(expr), Box::new(rhs));
         }
         Ok(expr)
     }
@@ -595,7 +550,7 @@ impl Parser {
                     self.tokens[self.index - 1].token()
                 )
             })?;
-            return Ok(Expression::Unary(op, Box::new(rhs)));
+            return Ok(Expression::Unary(ast::UnaryOpCode::NEG, Box::new(rhs)));
         }
         self.primary().with_context(|| {
             self.index -= 1;
@@ -617,7 +572,7 @@ impl Parser {
                         if let TokenLiteral::Identifier(ident) = &x {
                             let expr = self.expression()?;
                             match_token_or_err!(self, Token::RBracket);
-                            Ok(Expression::Access(x, Box::new(expr)))
+                            Ok(Expression::Access(ident.clone(), Box::new(expr)))
                         } else {
                             Err(anyhow!(
                                 "Expected Identifier! found {}\n{}",
@@ -629,24 +584,47 @@ impl Parser {
                     Token::LParen => {
                         self.index += 1;
                         match_token_or_err!(self, Token::RParen);
-                        Ok(Expression::Call(x.clone(), Vec::new()))
+                        if let TokenLiteral::Identifier(ident) = &x {
+                            let expr = self.expression()?;
+                            match_token_or_err!(self, Token::RBracket);
+                            Ok(Expression::Call(ident.clone(), Vec::new()))
+                        } else {
+                            Err(anyhow!(
+                                "Expected Identifier! found {}\n{}",
+                                &self.tokens[self.index].token(),
+                                to_error!(self, &self.tokens[self.index])
+                            ))
+                        }
+                        
                     }
                     Token::RArrow => {
                         self.index += 1;
                         if let Token::Literal(x2) = &self.tokens[self.index].token() {
                             self.index += 1;
                             match (x, x2) {
-                                (TokenLiteral::Integer(i1), TokenLiteral::Integer(i2)) => {
-                                    Ok(Expression::List(
-                                        Type::Int,
-                                        (i1..*i2).map(|v| TokenLiteral::Integer(v)).collect(),
-                                    ))
-                                }
-                                (TokenLiteral::Char(i1), TokenLiteral::Char(i2)) => {
-                                    Ok(Expression::List(
-                                        Type::Char,
-                                        (i1..*i2).map(|v| TokenLiteral::Char(v)).collect(),
-                                    ))
+                                (TokenLiteral::Value(i1), TokenLiteral::Value(i2)) => {
+                                    match (&i1,i2) {
+                                        (StaticValue::Integer(a), StaticValue::Integer(b)) => {
+                                            Ok(Expression::Instance(
+                                                Type::Object(ObjectType::Array(Box::new(Type::Int))),
+                                                (*a..*b).map(|v| Expression::Literal(TokenLiteral::Value(StaticValue::Integer(v)))).collect(),
+                                            ))
+                                        }
+                                        (StaticValue::Char(a), StaticValue::Char(b)) => {
+                                            Ok(Expression::Instance(
+                                                Type::Object(ObjectType::Array(Box::new(Type::Char))),
+                                                (*a..*b).map(|v| Expression::Literal(TokenLiteral::Value(StaticValue::Char(v)))).collect(),
+                                            ))
+                                        }
+                                        (_, _) => {
+                                            self.index -= 1;
+                                            return Err(anyhow!(
+                                                "Incompatible types for list initailization!\n{}",
+                                                to_error!(self, &self.tokens[self.index])
+                                            ));
+                                        }
+                                    }
+                                    
                                 }
                                 //(TokenLiteral::Float(i1), TokenLiteral::Float(i2)) => Ok(Expression::List( )),
                                 (_, _) => {
@@ -694,7 +672,7 @@ impl Parser {
                         }
                     }
                     match_token_or_err!(self, Token::RParen);
-                    return Ok(Expression::List(Type::Int, literals));
+                    return Ok(Expression::Instance(Type::Int, literals.iter().map(|lit| Expression::Literal(lit.clone())).collect()));
                 }
                 let expr = self.expression()?;
                 match_token_or_err!(self, Token::RParen);

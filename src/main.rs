@@ -1,6 +1,7 @@
 #![allow(warnings)]
 
 use anyhow::*;
+use lalrpop_util::lalrpop_mod;
 use std::env;
 use std::{
     collections::HashMap,
@@ -23,6 +24,9 @@ mod token_to_ast;
 mod tokenizer;
 mod typedata;
 mod value;
+mod ast;
+mod token;
+
 
 use bytecode::*;
 
@@ -33,9 +37,11 @@ use tokenizer::*;
 use typedata::*;
 use value::*;
 
+
 use clap::{arg, crate_version, value_parser, Arg, ArgAction, Command};
 use std::result::Result::Err;
 use std::result::Result::Ok;
+
 
 fn cli() -> Command {
     Command::new("abra")
@@ -83,6 +89,7 @@ fn cli() -> Command {
                 .arg(arg!(<FILE> "file to run"))
                 .arg_required_else_help(true),
         )
+
 }
 
 fn main() {
@@ -118,9 +125,7 @@ fn main() {
                 }
             };
             if debug > 2 {
-                for token in x.iter().enumerate() {
-                    println!("{} - {}", token.0, token.1.token());
-                }
+                x.iter().enumerate().for_each(|(i,tok)| println!("{} | {}",i,tok.token));
             }
             let mut parser: Parser = Parser::new(x);
 
@@ -155,9 +160,7 @@ fn compile(infile: &String, outfile: &String, debug: u16, pretty: bool) {
         }
     };
     if debug > 2 {
-        for token in x.iter().enumerate() {
-            println!("{} - {}", token.0, token.1.token());
-        }
+        x.iter().enumerate().for_each(|(i,tok)| println!("{} | {}",i,tok.token));
     }
     let mut parser: Parser = Parser::new(x);
 

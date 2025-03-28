@@ -32,7 +32,7 @@ macro_rules! cast_to {
     ($t_func:ident,$type:ty) => {
         pub fn $t_func(&self) -> anyhow::Result<$type> {
             match self {
-                Value::Bool(x) => Ok(*x as isize as $type),
+                Value::Bool(x) => Ok(*x as i64 as $type),
                 Value::Char(x) => Ok(*x as u8 as $type),
                 Value::Float(x) => Ok(*x as $type),
                 Value::Integer(x) => Ok(*x as $type),
@@ -53,16 +53,16 @@ macro_rules! cast_to {
     };
 }
 
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, PartialOrd, Deserialize, Serialize)]
 pub enum StaticValue {
     #[default]
     Null,
-    Integer(isize),
+    Integer(i64),
     Float(f64),
     Char(char),
     Bool(bool),
     String(String),
-    Object(ObjectInitializer),
+    //Object(ObjectInitializer),
 }
 
 impl Into<Value> for StaticValue {
@@ -74,7 +74,7 @@ impl Into<Value> for StaticValue {
             StaticValue::Char(c) => Value::Char(c),
             StaticValue::Integer(i) => Value::Integer(i),
             StaticValue::Float(f) => Value::Float(f),
-            StaticValue::Object(_) => Value::Null,
+            //StaticValue::Object(_) => Value::Null,
         }
     }
 }
@@ -97,7 +97,7 @@ impl From<Value> for StaticValue {
 pub enum Value {
     #[default]
     Null,
-    Integer(isize),
+    Integer(i64),
     Float(f64),
     Char(char),
     Bool(bool),
@@ -141,7 +141,7 @@ impl Value {
         }
     }
 
-    cast_to!(cast_to_int, isize);
+    cast_to!(cast_to_int, i64);
     cast_to!(cast_to_float, f64);
     // cast_to!(cast_to_char, char);
 
@@ -164,7 +164,7 @@ impl Value {
         Err(anyhow!("expected null"))
     }
 
-    pub fn expect_int(&self) -> anyhow::Result<isize> {
+    pub fn expect_int(&self) -> anyhow::Result<i64> {
         if let Value::Integer(x) = self {
             return Ok(*x);
         }

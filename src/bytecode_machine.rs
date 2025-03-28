@@ -37,14 +37,14 @@ struct StackFrame {
     name: Option<String>,
     local_variables: HashMap<String, Value>,
     object: Option<Ref>,
-    bytecode_return_index: isize,
-    stack_return_index: isize,
+    bytecode_return_index: i64,
+    stack_return_index: i64,
 }
 
 impl StackFrame {
     fn new<T: Into<String>>(
-        bytecode_ret_index: isize,
-        stack_ret_index: isize,
+        bytecode_ret_index: i64,
+        stack_ret_index: i64,
         name: Option<T>,
     ) -> Self {
         StackFrame {
@@ -77,7 +77,7 @@ impl ByteCodeMachine {
             debug_breakpoints: Vec::new(),
         };
         let start_index = slf.labels["_start"];
-        slf.registers[11] = Value::Integer(start_index as isize);
+        slf.registers[11] = Value::Integer(start_index as i64);
         slf.registers[10] = Value::Integer(0);
         if debug_mode {
             println!("DEBUG MODE <Q/q - quit> <R/r - run> <N/n - next> <B/b - set breakpoint> <S/s - shows first 10 values on stack> <C/c - shows bytecode>");
@@ -85,9 +85,9 @@ impl ByteCodeMachine {
         slf
     }
 
-    fn instance(&mut self, object: ObjectInitializer) -> Ref {
+    fn instance(&mut self, typ: ObjectType, values: Vec<Value>) -> Ref {
         Ref::instance_with(Rc::new(Mutex::new(RefHeader::instance_with_initializer(
-            object,
+            typ, values
         ))))
     }
 
@@ -105,7 +105,7 @@ impl ByteCodeMachine {
             println!("Bytecode:");
             let index = self.registers[11].expect_int().unwrap() as usize;
             let (low_range, high_range) = (
-                0.max(index as isize - 5) as usize,
+                0.max(index as i64 - 5) as usize,
                 self.bytecode.len().min(index + 5),
             );
             for i in low_range..high_range {
@@ -279,7 +279,7 @@ impl ByteCodeMachine {
                 Ok(true)
             }
             ByteCode::JMPTO(label) => {
-                let new_stack_index = self.labels[&label] as isize - 1;
+                let new_stack_index = self.labels[&label] as i64 - 1;
                 self.registers[11] = Value::Integer(new_stack_index);
                 Ok(true)
             }
@@ -288,7 +288,7 @@ impl ByteCodeMachine {
                 Ok(true)
             }
             ByteCode::JMPREL(offset) => {
-                self.registers[11] = Value::Integer(index as isize + offset - 1);
+                self.registers[11] = Value::Integer(index as i64 + offset - 1);
                 Ok(true)
             }
             ByteCode::JITA(indx) => {
@@ -301,7 +301,7 @@ impl ByteCodeMachine {
             ByteCode::JITL(label) => {
                 let boolean = self.pop_from_stack()?.expect_bool()?;
                 if boolean {
-                    let new_stack_index = self.labels[&label] as isize - 1;
+                    let new_stack_index = self.labels[&label] as i64 - 1;
                     self.registers[11] = Value::Integer(new_stack_index);
                 }
                 Ok(true)
@@ -309,7 +309,7 @@ impl ByteCodeMachine {
             ByteCode::JITR(offset) => {
                 let boolean = self.pop_from_stack()?.expect_bool()?;
                 if boolean {
-                    self.registers[11] = Value::Integer(index as isize + offset - 1);
+                    self.registers[11] = Value::Integer(index as i64 + offset - 1);
                 }
                 Ok(true)
             }
@@ -474,11 +474,11 @@ impl ByteCodeMachine {
             }
             ByteCode::CALL(func) => {
                 self.stack_frames.push(StackFrame::new(
-                    index as isize,
+                    index as i64,
                     self.registers[10].expect_int()?,
                     Some(&func),
                 ));
-                let new_bc_index = self.labels[&func] as isize - 1;
+                let new_bc_index = self.labels[&func] as i64 - 1;
                 self.registers[11] = Value::Integer(new_bc_index);
                 Ok(true)
             }
@@ -494,8 +494,16 @@ impl ByteCodeMachine {
                 Ok(true)
             }
             ByteCode::EXIT => Ok(false),
-            ByteCode::INSTANCE(value) => {
-                let rf = self.instance(value);
+            ByteCode::INSTANCE(typ, argc) => {
+                let mut acc = Vec::new();
+                for x in (0..argc) {
+                    acc.push(self.pop_from_stack()?);
+                }
+                let obj_type = match typ {
+                    Type::Object(object_type) => object_type,
+                    _ => ObjectType::BoxedValue,
+                };
+                let rf = self.instance(obj_type,acc);
                 self.push_to_stack(&Value::Ref(rf))?;
                 Ok(true)
             }

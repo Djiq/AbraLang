@@ -1,8 +1,11 @@
-use std::fmt::{write, Display};
+use std::{collections::HashMap, fmt::{write, Display}};
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+use crate::object::RefObject;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
 pub enum Type {
     String,
     Int,
@@ -10,6 +13,9 @@ pub enum Type {
     Bool,
     Char,
     Object(ObjectType),
+}
+
+impl Type {
 }
 
 impl Display for Type {
@@ -25,9 +31,10 @@ impl Display for Type {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
 pub enum ObjectType {
     Null,
+    BoxedValue,
     Array(Box<Type>),
     Map(Box<Type>, Box<Type>),
     Abra(AbraType),
@@ -40,9 +47,37 @@ impl Display for ObjectType {
             ObjectType::Map(t1, t2) => write!(f, "<{} -> {}>", t1, t2),
             ObjectType::Null => write!(f, "<null>]"),
             ObjectType::Array(typ) => write!(f, "[{}]", typ),
+            ObjectType::BoxedValue => todo!(),
         }
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+impl ObjectType{
+    pub fn instance_self(&self,init: Vec<crate::Value>) -> RefObject {
+        match &self {
+            ObjectType::Abra(_) => {
+                        todo!()
+                    }
+            ObjectType::Map(t1, t2) => {
+                        let mut map = HashMap::new();
+                        let objects = init.len() / 2;
+                        let init_clone = init.clone();
+                        for x in 0..objects {
+                            let key: crate::Value = init_clone[2 * x].clone().into();
+                            let value = &init_clone[2 * x + 1];
+                            map.insert(key.get_string_representation(), value.clone().into());
+                        }
+
+                        RefObject::Map(*t1.clone(), *t2.clone(), map)
+                    }
+            ObjectType::Null => panic!(),
+            ObjectType::Array(typ) => RefObject::Array(
+                        *typ.clone(),
+                        init
+                    ),
+            ObjectType::BoxedValue => RefObject::BoxedValue(init[0].clone()),
+        }
+    }
+}
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
 pub struct AbraType {}

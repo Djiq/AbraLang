@@ -1,8 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    object::ObjectInitializer, tokenizer::TokenLiteral, ByteCode, Expression, Function, Statement,
-    StaticValue, Token,
+    ast::{BinOpCode, Expression, Function, Statement}, token::TokenLiteral, ByteCode, token::Token
 };
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -186,77 +185,47 @@ impl Compiler {
     fn compile_expression(&mut self, expr: &Expression) {
         match expr {
             Expression::Access(literal, expr) => {
-                self.compile_expression(&expr);
-                if let TokenLiteral::Identifier(ident) = literal {
-                    self.bytecode.push(ByteCode::GETVARLOCAL(ident.clone()));
-                    self.bytecode.push(ByteCode::GETFROMREF);
-                }
-            }
-            Expression::List(typ, literals) => {
-                let mut values = Vec::new();
-                for literal in literals {
-                    match literal {
-                        crate::TokenLiteral::Integer(i) => values.push(StaticValue::Integer(*i)),
-                        crate::TokenLiteral::Bool(i) => values.push(StaticValue::Bool(*i)),
-                        crate::TokenLiteral::Float(i) => values.push(StaticValue::Float(*i)),
-                        crate::TokenLiteral::String(s) => {
-                            values.push(StaticValue::String(s.clone()))
-                        }
-                        crate::TokenLiteral::Char(c) => values.push(StaticValue::Char(*c)),
-                        _ => {}
+                        self.compile_expression(&expr);
+                
+                        self.bytecode.push(ByteCode::GETVARLOCAL(literal.clone()));
+                        self.bytecode.push(ByteCode::GETFROMREF);
+                
                     }
-                }
-                self.bytecode.push(ByteCode::INSTANCE(ObjectInitializer {
-                    typ: crate::typedata::ObjectType::Array(Box::new(typ.clone())),
-                    init: literals.iter().map(|lit| lit.to_static_value()).collect(),
-                }));
-            }
             Expression::Literal(literal) => match literal {
-                crate::TokenLiteral::Identifier(ident) => {
-                    self.bytecode.push(ByteCode::GETVARLOCAL(ident.clone()));
-                }
-                crate::TokenLiteral::Integer(i) => {
-                    self.bytecode.push(ByteCode::PUSH(StaticValue::Integer(*i)))
-                }
-                crate::TokenLiteral::Bool(i) => {
-                    self.bytecode.push(ByteCode::PUSH(StaticValue::Bool(*i)))
-                }
-                crate::TokenLiteral::Float(i) => {
-                    self.bytecode.push(ByteCode::PUSH(StaticValue::Float(*i)))
-                }
-                crate::TokenLiteral::String(s) => self
-                    .bytecode
-                    .push(ByteCode::PUSH(StaticValue::String(s.clone()))),
-                crate::TokenLiteral::Char(c) => {
-                    self.bytecode.push(ByteCode::PUSH(StaticValue::Char(*c)))
-                }
-            },
+                        crate::token::TokenLiteral::Identifier(ident) => {
+                            self.bytecode.push(ByteCode::GETVARLOCAL(ident.clone()));
+                        }
+                        crate::token::TokenLiteral::Value(v) => {
+                            self.bytecode.push(ByteCode::PUSH(v.clone()))
+                        }
+                    },
             Expression::Binary(op, lhs, rhs) => {
-                self.compile_expression(rhs);
-                self.compile_expression(lhs);
+                        self.compile_expression(rhs);
+                        self.compile_expression(lhs);
 
-                match op {
-                    Token::Plus => self.bytecode.push(ByteCode::ADD),
-                    Token::Minus => self.bytecode.push(ByteCode::SUB),
-                    Token::Slash => self.bytecode.push(ByteCode::DIV),
-                    Token::Star => self.bytecode.push(ByteCode::MULT),
-                    Token::EqualsEquals => self.bytecode.push(ByteCode::EQUALS),
-                    Token::EqualsGreater => self.bytecode.push(ByteCode::EQGREAT),
-                    Token::EqualsLesser => self.bytecode.push(ByteCode::EQLESS),
-                    Token::Lesser => self.bytecode.push(ByteCode::LESSER),
-                    Token::Greater => self.bytecode.push(ByteCode::GREATER),
-                    _ => {}
-                }
-            }
+                        match op {
+                            BinOpCode::ADD => self.bytecode.push(ByteCode::ADD),
+                            BinOpCode::SUB => self.bytecode.push(ByteCode::SUB),
+                            BinOpCode::DIV => self.bytecode.push(ByteCode::DIV),
+                            BinOpCode::MULT => self.bytecode.push(ByteCode::MULT),
+                            BinOpCode::EQ => self.bytecode.push(ByteCode::EQUALS),
+                            BinOpCode::GE => self.bytecode.push(ByteCode::EQGREAT),
+                            BinOpCode::LE => self.bytecode.push(ByteCode::EQLESS),
+                            BinOpCode::LT => self.bytecode.push(ByteCode::LESSER),
+                            BinOpCode::GT => self.bytecode.push(ByteCode::GREATER),
+                            _ => {}
+                        }
+                    }
             Expression::Call(func, args) => {
-                if let TokenLiteral::Identifier(func_name) = func {
-                    self.bytecode.push(ByteCode::CALL(func_name.clone()));
-                }
-            }
+                        
+                        self.bytecode.push(ByteCode::CALL(func.clone()));
+                        
+                    }
             Expression::Unary(op, expr) => {}
             Expression::Grouping(group) => {
-                self.compile_expression(&group);
-            }
+                        self.compile_expression(&group);
+                    }
+Expression::Instance(_, expressions) => todo!(),
         }
     }
 }
