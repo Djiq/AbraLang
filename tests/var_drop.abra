@@ -1,5 +1,5 @@
 func main() -> int
     if true 
-        x : int = 0
+        let x : int = 0
     print x
     return 0

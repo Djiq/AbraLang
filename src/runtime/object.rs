@@ -1,5 +1,4 @@
 use std::{
-    any,
     collections::HashMap,
     fmt::Display,
     rc::Rc,
@@ -7,8 +6,8 @@ use std::{
 };
 
 use crate::{
-    typedata::{ObjectType, Type},
-    value::{StaticValue, Value},
+    runtime::types::{ObjectType, Type},
+    runtime::value::Value,
 };
 use anyhow::{anyhow, Ok};
 use serde::{Deserialize, Serialize};
@@ -22,6 +21,11 @@ impl Ref {
     pub fn get_uuid(&self) -> usize {
         let lock = self.towards.lock().unwrap();
         lock.uuid
+    }
+
+    pub fn is_null(&self) -> bool{
+        let lock = self.towards.lock().unwrap();
+        lock.deleted
     }
 
     pub fn delete(&self) {
@@ -47,6 +51,13 @@ impl Ref {
     pub fn modify(&self, at: &Value, with: Value) -> anyhow::Result<()> {
         let mut lock = self.towards.lock().unwrap();
         lock.modify(at, with)
+    }
+}
+
+impl Display for Ref {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let lock = self.towards.lock().unwrap();
+        lock.ref_object.fmt(f)
     }
 }
 
@@ -135,7 +146,7 @@ impl Display for RefObject {
                             .fold(String::new(), |acc, v| format!("{},{}", acc, v));
                         write!(f, "[{}]", s)
                     }
-RefObject::BoxedValue(value) => todo!(),
+            RefObject::BoxedValue(value) => todo!(),
         }
     }
 }

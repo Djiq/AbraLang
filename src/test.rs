@@ -1,4 +1,6 @@
-use crate::*;
+use crate::cli::{compile,run};
+use crate::compiler::Code;
+use anyhow::Result;
 use paste::paste;
 
 macro_rules! abra_compile_test {
@@ -60,28 +62,14 @@ macro_rules! abra_compile_test {
     };
     ($name:ident) => {
     fn $name() -> (Option<Code>,Result<u64>){
-        let x = match tokenize(read_to_string(format!("tests/{}.abra",stringify!($name))).unwrap()){
+        let code = match compile(&format!("tests/{}.abra",stringify!($name)),1){
             Ok(z) => z,
             Err(err) => {
-                println!("Tokenization Error!\n{:?}",err);
+                println!("{:?}",err);
                 return (None,Err(err))
             }
         };
-        let mut parser: Parser = Parser::new(x);
-        let parsed = match parser.parse() {
-            Ok(z) => z,
-            Err(err) => {
-                for cause in err.chain() {
-                    println!("{:?}",cause);
-                }
-                println!("Parsing Error!\n{:?}",err);
-                return (None,Err(err))
-            }
-        };
-        let mut compiler : Compiler = Compiler::new();
-        compiler.compile_from_ast(parsed);
-        let code: Code = compiler.into();
-        return (Some(code.clone()),Ok(ByteCodeMachine::new(code,false).run() as u64));
+        return (Some(code.clone()),Ok(run(&code,0).unwrap() as u64));
         }
     };
 

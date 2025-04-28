@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ast::{BinOpCode, Expression, Function, Statement}, token::TokenLiteral, ByteCode, token::Token
+    compiler::ByteCode, frontend::{ast::{BinOpCode, Expression, Item, Statement}, tokenizer::TokenLiteral}
 };
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -53,14 +53,21 @@ impl Compiler {
         }
     }
 
-    pub fn compile_from_ast(&mut self, ast: Vec<Function>) {
+    pub fn compile_from_ast(&mut self, ast: Vec<Item>) {
         self.labels.push(("_start".into(), 0));
         self.bytecode.push(ByteCode::CALL("main".into()));
         self.bytecode.push(ByteCode::EXIT);
-        for func in ast {
-            let mut vec = Vec::new();
-            self.labels.push((func.name, self.bytecode.len()));
-            self.compile_body(&func.body, Some(&mut vec));
+
+        for item in ast {
+
+            match item {
+                Item::Function(func) => {
+                    let mut vec = Vec::new();
+                    self.labels.push((func.name, self.bytecode.len()));
+                    self.compile_body(&func.body, Some(&mut vec));
+                },
+            }
+           
         }
     }
 
@@ -119,7 +126,7 @@ impl Compiler {
         match stmt {
             Statement::Declare(name, typedata, expr) => {
                 self.compile_expression(expr);
-                self.bytecode.push(ByteCode::DEFVAR(name.clone()));
+                self.bytecode.push(ByteCode::DEFVAR(name.clone(),typedata.to_owned()));
                 out.push(name.clone());
             }
             Statement::If(expr, block, els) => {
@@ -192,10 +199,10 @@ impl Compiler {
                 
                     }
             Expression::Literal(literal) => match literal {
-                        crate::token::TokenLiteral::Identifier(ident) => {
+                        TokenLiteral::Identifier(ident) => {
                             self.bytecode.push(ByteCode::GETVARLOCAL(ident.clone()));
                         }
-                        crate::token::TokenLiteral::Value(v) => {
+                        TokenLiteral::Value(v) => {
                             self.bytecode.push(ByteCode::PUSH(v.clone()))
                         }
                     },
@@ -225,7 +232,10 @@ impl Compiler {
             Expression::Grouping(group) => {
                         self.compile_expression(&group);
                     }
-Expression::Instance(_, expressions) => todo!(),
+            Expression::Instance(t, expressions) => {
+                
+            },
         }
     }
 }
+

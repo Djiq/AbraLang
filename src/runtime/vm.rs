@@ -1,8 +1,8 @@
-use crate::{
-    object::{ObjectInitializer, Ref, RefHeader, RefObject},
-    *,
-};
-use std::{io::BufRead, process::Command, rc::Rc, sync::MutexGuard};
+use crate::compiler::{ByteCode, Code};
+use anyhow::*;
+use std::{collections::HashMap, io::BufRead, rc::Rc, sync::Mutex};
+
+use super::{object::{Ref, RefHeader}, types::{ObjectType, Type}, value::Value};
 
 /*
     R0 - LONG-LASTING REGISTER 0
@@ -126,7 +126,7 @@ impl ByteCodeMachine {
             let stack_index = self.registers[10].expect_int().unwrap();
             let mut i = stack_index;
             while i >= 0 && i + 10 >= stack_index {
-                if (i == stack_index) {
+                if  i == stack_index  {
                     println!("{} | {} << HEAD", i, &self.stack[i as usize]);
                 } else {
                     println!("{} | {}", i, &self.stack[i as usize]);
@@ -496,7 +496,7 @@ impl ByteCodeMachine {
             ByteCode::EXIT => Ok(false),
             ByteCode::INSTANCE(typ, argc) => {
                 let mut acc = Vec::new();
-                for x in (0..argc) {
+                for _ in 0..argc {
                     acc.push(self.pop_from_stack()?);
                 }
                 let obj_type = match typ {
@@ -525,7 +525,7 @@ impl ByteCodeMachine {
 
                 Ok(true)
             }
-            ByteCode::DEFVAR(string) => {
+            ByteCode::DEFVAR(string,t) => {
                 let val = self.pop_from_stack()?;
                 self.stack_frames
                     .last_mut()

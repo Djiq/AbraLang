@@ -1,6 +1,6 @@
 func main() -> int 
-    x: int = 0
-    for y:int = 0, y < 10, y = y + 1
+    let x: int = 0
+    for let y:int = 0, y < 10, y = y + 1
         x = x + y
         
     if x == 45

@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::{token::Token, token::TokenLiteral, typedata::Type};
+use crate::{ frontend::tokenizer::{TokenLiteral,Token}, runtime::types::Type};
 
 
 pub enum Item{
@@ -9,7 +9,8 @@ pub enum Item{
 
 pub struct Function {
     pub name: String,
-    pub return_type: Token,
+    pub params: Vec<Parameter>,
+    pub return_type: Type,
     pub body: Vec<Statement>,
 }
 
@@ -95,13 +96,15 @@ impl Display for BinOpCode {
 
 #[derive(Clone)]
 pub enum UnaryOpCode{
-    NEG
+    NEG,
+    NOT
 }
 
 impl Display for UnaryOpCode{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            UnaryOpCode::NEG => write!(f,"!"),
+            UnaryOpCode::NEG => write!(f,"-"),
+            UnaryOpCode::NOT => write!(f,"!"),
         }
     }
 }
@@ -144,4 +147,10 @@ pub enum Statement {
         Option<Vec<Statement>>,
     ),
     Null,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Parameter {
+    pub name: String,
+    pub ty: Type,
 }

@@ -1,12 +1,12 @@
-use std::{fmt::format, ops::Index, rc::Rc};
+use std::{fmt::Display, ops::{Add, Div, Mul, Sub}};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    object::{ObjectInitializer, Ref, RefObject},
-    typedata::ObjectType,
-    *,
-};
+use crate::runtime::object::Ref;
+
+use anyhow::*;
+
+use super::types::Type;
 
 macro_rules! value_implements {
     ($t:ty,$t_func:ident) => {
@@ -118,7 +118,7 @@ impl Value {
         }
     }
 
-    pub fn cast(&self, to: typedata::Type) -> Result<Value> {
+    pub fn cast(&self, to: Type) -> Result<Value> {
         match to {
             Type::Bool => Ok(Value::Bool(self.cast_to_bool()?)),
             Type::Char => Ok(Value::Char(self.cast_to_int()? as u8 as char)),
@@ -153,7 +153,7 @@ impl Value {
             Value::Float(x) => Ok(*x == 0.),
             Value::Char(x) => Ok(*x as u8 == 0),
             Value::String(string) => Ok(string.len() != 0),
-            Value::Ref(rf) => Ok(true),
+            Value::Ref(rf) => Ok(rf.is_null()),
         }
     }
 
@@ -216,7 +216,7 @@ impl Display for Value {
             Value::Integer(x) => write!(f, "{}", x),
             Value::Float(x) => write!(f, "{}", x),
             Value::Char(x) => write!(f, "{}", x),
-            Value::Ref(x) => write!(f, ""),
+            Value::Ref(x) => write!(f,"{}",x),
         }
     }
 }

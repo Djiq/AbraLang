@@ -1,9 +1,9 @@
-use std::{collections::HashMap, fmt::{write, Display}};
+use std::{collections::HashMap, fmt::Display};
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use crate::runtime::value::Value;
 
-use crate::object::RefObject;
+use crate::runtime::object::RefObject;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
 pub enum Type {
@@ -53,7 +53,7 @@ impl Display for ObjectType {
 }
 
 impl ObjectType{
-    pub fn instance_self(&self,init: Vec<crate::Value>) -> RefObject {
+    pub fn instance_self(&self,init: Vec<Value>) -> RefObject {
         match &self {
             ObjectType::Abra(_) => {
                         todo!()
@@ -63,7 +63,7 @@ impl ObjectType{
                         let objects = init.len() / 2;
                         let init_clone = init.clone();
                         for x in 0..objects {
-                            let key: crate::Value = init_clone[2 * x].clone().into();
+                            let key: Value = init_clone[2 * x].clone().into();
                             let value = &init_clone[2 * x + 1];
                             map.insert(key.get_string_representation(), value.clone().into());
                         }

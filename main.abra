@@ -1,5 +1,2 @@
 func main() -> int
-    let x : [int] = new [int](1,2,3,4)
-    print x[0]
-    print '\n'
     return 0

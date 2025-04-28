@@ -2,12 +2,12 @@ use std::{fmt::Display, iter::Peekable, str::CharIndices};
 
 use serde::{Deserialize, Serialize};
 use anyhow::{anyhow, Result};
-use crate::value::StaticValue;
+use crate::runtime::value::StaticValue;
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, PartialOrd)]
 pub enum Token {
-    DColonDColon,
     DColon,
+    Colon,
     Comma,
     LParen,
     RParen,
@@ -50,6 +50,8 @@ pub enum Token {
     For,
     While,
     Do,
+    Let,
+
     Loop,
     New,
     EndOfFile,
@@ -81,6 +83,38 @@ impl Display for TokenLiteral {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = serde_json::to_string(self).unwrap();
         write!(f, "{}", &s)
+    }
+}
+
+pub trait TokenName { fn variant_name(&self) -> &'static str; }
+impl TokenName for Token {
+    fn variant_name(&self) -> &'static str {
+         match self {
+            Token::DColon => "::", Token::Colon => ":", Token::Comma => ",",
+            Token::LParen => "(", Token::RParen => ")", Token::LBracket => "[",
+            Token::RBracket => "]", Token::Plus => "+", Token::PlusEquals => "+=",
+            Token::Minus => "-", Token::MinusEquals => "-=", Token::Slash => "/",
+            Token::SlashEquals => "/=", Token::Star => "*", Token::StarEquals => "*=",
+            Token::Equals => "=", Token::EqualsEquals => "==", Token::Greater => ">",
+            Token::Lesser => "<", Token::EqualsGreater => ">=", Token::EqualsLesser => "<=",
+            Token::RArrow => "->", Token::LArrow => "<-", Token::EndLine => "EndLine",
+            Token::Indent => "Indent", Token::Dedent => "Dedent", Token::Bang => "!",
+            Token::BangEq => "!=",
+            Token::Literal(TokenLiteral::Identifier(_)) => "Identifier",
+            Token::Literal(TokenLiteral::Value(StaticValue::Integer(_))) => "IntegerLiteral",
+            Token::Literal(TokenLiteral::Value(StaticValue::Float(_))) => "FloatLiteral",
+            Token::Literal(TokenLiteral::Value(StaticValue::Char(_))) => "CharLiteral",
+            Token::Literal(TokenLiteral::Value(StaticValue::Bool(_))) => "BoolLiteral",
+            Token::Literal(TokenLiteral::Value(StaticValue::String(_))) => "StringLiteral",
+            Token::Literal(TokenLiteral::Value(StaticValue::Null)) => "NullLiteral",
+            Token::Func => "func", Token::Int => "int", Token::Float => "float", Token::Char => "char",
+            Token::Bool => "bool", Token::String => "string", Token::Print => "print",
+            Token::Return => "return", Token::If => "if", Token::Else => "else",
+            Token::For => "for", Token::While => "while", Token::Do => "do",
+            Token::Loop => "loop", Token::New => "new", Token::EndOfFile => "EndOfFile",
+            Token::Let => "let",
+            // Add other variants if defined
+         }
     }
 }
 
@@ -166,6 +200,7 @@ impl<'a> Tokenizer<'a> {
             "new" => Token::New,
             "true" => Token::Literal(TokenLiteral::Value(StaticValue::Bool(true))),
             "false" => Token::Literal(TokenLiteral::Value(StaticValue::Bool(false))),
+            "let" => Token::Let,
             _ => Token::Literal(TokenLiteral::Identifier(full_id)),
         };
 
@@ -307,7 +342,7 @@ impl<'a> Tokenizer<'a> {
         let mut level = 0;
         let mut style = IndentStyle::Undetermined;
         let mut space_count = 0;
-        let mut start_pos = self.characters.peek().map_or(self.input.len(), |(idx, _)| *idx);
+        let start_pos = self.characters.peek().map_or(self.input.len(), |(idx, _)| *idx);
         let mut pos_after_indent = start_pos;
 
         loop {
@@ -500,9 +535,9 @@ impl<'i> Iterator for Tokenizer<'i> {
                          ':' => {
                              if self.characters.peek().map(|&(_, c)| c == ':').unwrap_or(false) {
                                 self.characters.next();
-                                Ok((start_index, Token::DColonDColon, start_index + 2))
+                                Ok((start_index, Token::DColon, start_index + 2))
                             } else {
-                                Ok((start_index, Token::DColon, end_index))
+                                Ok((start_index, Token::Colon, end_index))
                             }
                          }
                         '+' => {
