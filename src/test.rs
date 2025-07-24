@@ -1,4 +1,4 @@
-use crate::cli::{compile,run};
+use crate::cli::{compile, run};
 use crate::compiler::Code;
 use anyhow::Result;
 use paste::paste;
@@ -86,6 +86,7 @@ abra_compile_test! {
     ok neq;
     ok for_loop;
     ok var_decl;
-    fail var_drop;
-    ok fn_call
+    panic var_drop;
+    ok fn_call;
+    ok class
 }

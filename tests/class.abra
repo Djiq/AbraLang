@@ -1,0 +1,17 @@
+class Vec3
+    let x : int
+    let y : int
+    let z : int 
+    
+    func Vec3(self,x:int,y:int,z:int) -> Vec3
+        self.x = x
+        self.y = y
+        self.z = z
+        return self
+    
+    func len(self) -> int
+        return self.x 
+
+func main() -> int 
+    let vec : Vec3 = new Vec3(1,2,3)
+    return 0

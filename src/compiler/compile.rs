@@ -1,7 +1,17 @@
+use std::{any, collections::HashMap};
+
+use anyhow::*;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    compiler::ByteCode, frontend::{ast::{BinOpCode, Expression, Item, Statement}, tokenizer::TokenLiteral}
+    compiler::{
+        typecheck::{AbraTypeDefinition, FunctionSignature, Type, TypeChecker, TypeCheckerMessage},
+        ByteCode,
+    },
+    frontend::{
+        ast::{BinOpCode, Expression, Item, Statement},
+        tokenizer::TokenLiteral,
+    },
 };
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -38,10 +48,18 @@ impl From<Compiler> for Code {
     }
 }
 
+type CompFuncSig = (Option<usize>, FunctionSignature);
+#[derive(Serialize, Deserialize, Clone)]
+pub enum Symbol {
+    Class(AbraTypeDefinition),
+    Function(CompFuncSig),
+}
+
 pub struct Compiler {
     bytecode: Vec<ByteCode>,
     labels: Vec<(String, usize)>,
     label_iter: usize,
+    symbol_table: HashMap<String, Symbol>,
 }
 
 impl Compiler {
@@ -50,24 +68,68 @@ impl Compiler {
             bytecode: Vec::new(),
             labels: Vec::new(),
             label_iter: 0,
+            symbol_table: HashMap::new(),
         }
     }
+    pub fn compilation_pipepline(&mut self, ast: Vec<Item>) -> Result<(), anyhow::Error> {
+        self.compile_from_ast(&ast);
+        let mut t = TypeChecker::new(&ast);
+        t.check();
+        for msg in t.messages.iter() {
+            println!("{}", msg);
+        }
+        if t.messages
+            .iter()
+            .filter(|f| matches!(f, TypeCheckerMessage::Error(_)))
+            .count()
+            > 0
+        {
+            println!("Compilation Failed!");
+            return Err(anyhow!("Compilation Failed!"));
+        }
+        let (a, b) = t.export();
+        let c = a.iter().map(|a| (a.0.clone(), Symbol::Class(a.1.clone())));
+        let d = b
+            .iter()
+            .map(|b| (b.0.clone(), Symbol::Function((None, b.1.clone()))));
+        c.chain(d).for_each(|(k, v)| {
+            self.symbol_table.insert(k, v);
+        });
+        Ok(())
+    }
 
-    pub fn compile_from_ast(&mut self, ast: Vec<Item>) {
+    pub fn compile_from_ast(&mut self, ast: &Vec<Item>) {
+        //COMPILATION
         self.labels.push(("_start".into(), 0));
-        self.bytecode.push(ByteCode::CALL("main".into()));
+        self.bytecode.push(ByteCode::CALL("main".into(), 0));
         self.bytecode.push(ByteCode::EXIT);
 
-        for item in ast {
-
+        for item in ast.clone() {
             match item {
                 Item::Function(func) => {
                     let mut vec = Vec::new();
                     self.labels.push((func.name, self.bytecode.len()));
+                    for arg in func.params.iter().rev() {
+                        self.bytecode
+                            .push(ByteCode::DEFVAR(arg.name.clone().into(), arg.ty.clone()));
+                    }
                     self.compile_body(&func.body, Some(&mut vec));
-                },
+                }
+                Item::Class(class) => {
+                    class.functions.iter().for_each(|f| {
+                        self.labels.push((
+                            format!("{}::{}", class.name.clone(), f.name.clone()),
+                            self.bytecode.len(),
+                        ));
+                        let mut vec = Vec::new();
+                        for arg in f.params.iter().rev() {
+                            self.bytecode
+                                .push(ByteCode::DEFVAR(arg.name.clone().into(), arg.ty.clone()));
+                        }
+                        self.compile_body(&f.body, Some(&mut vec));
+                    });
+                }
             }
-           
         }
     }
 
@@ -78,6 +140,11 @@ impl Compiler {
     pub fn get_labels(&self) -> Vec<(String, usize)> {
         self.labels.clone()
     }
+
+    pub fn get_symbols(&self) -> HashMap<String, Symbol> {
+        self.symbol_table.clone()
+    }
+    ///>
 
     pub fn string_representation(&self) -> String {
         let mut ret = String::new();
@@ -126,7 +193,8 @@ impl Compiler {
         match stmt {
             Statement::Declare(name, typedata, expr) => {
                 self.compile_expression(expr);
-                self.bytecode.push(ByteCode::DEFVAR(name.clone(),typedata.to_owned()));
+                self.bytecode
+                    .push(ByteCode::DEFVAR(name.clone(), typedata.to_owned()));
                 out.push(name.clone());
             }
             Statement::If(expr, block, els) => {
@@ -174,7 +242,7 @@ impl Compiler {
                     self.bytecode.push(ByteCode::RET(false));
                 }
             }
-            Statement::Assign(variable, expr) => {
+            Statement::Set(on,variable, expr) => {
                 self.compile_expression(expr);
                 self.bytecode.push(ByteCode::SAVEVARLOCAL(variable.clone()));
             }
@@ -183,7 +251,7 @@ impl Compiler {
             }
             Statement::Print(expr) => {
                 self.compile_expression(expr);
-                self.bytecode.push(ByteCode::SHOW);
+                //self.bytecode.push(ByteCode::SHOW);
             }
             Statement::Null => {}
         }
@@ -191,51 +259,53 @@ impl Compiler {
 
     fn compile_expression(&mut self, expr: &Expression) {
         match expr {
-            Expression::Access(literal, expr) => {
-                        self.compile_expression(&expr);
-                
-                        self.bytecode.push(ByteCode::GETVARLOCAL(literal.clone()));
-                        self.bytecode.push(ByteCode::GETFROMREF);
-                
-                    }
-            Expression::Literal(literal) => match literal {
-                        TokenLiteral::Identifier(ident) => {
-                            self.bytecode.push(ByteCode::GETVARLOCAL(ident.clone()));
-                        }
-                        TokenLiteral::Value(v) => {
-                            self.bytecode.push(ByteCode::PUSH(v.clone()))
-                        }
-                    },
-            Expression::Binary(op, lhs, rhs) => {
-                        self.compile_expression(rhs);
-                        self.compile_expression(lhs);
+            Expression::Get(literal, expr) => {
+                self.compile_expression(&expr);
 
-                        match op {
-                            BinOpCode::ADD => self.bytecode.push(ByteCode::ADD),
-                            BinOpCode::SUB => self.bytecode.push(ByteCode::SUB),
-                            BinOpCode::DIV => self.bytecode.push(ByteCode::DIV),
-                            BinOpCode::MULT => self.bytecode.push(ByteCode::MULT),
-                            BinOpCode::EQ => self.bytecode.push(ByteCode::EQUALS),
-                            BinOpCode::GE => self.bytecode.push(ByteCode::EQGREAT),
-                            BinOpCode::LE => self.bytecode.push(ByteCode::EQLESS),
-                            BinOpCode::LT => self.bytecode.push(ByteCode::LESSER),
-                            BinOpCode::GT => self.bytecode.push(ByteCode::GREATER),
-                            _ => {}
-                        }
-                    }
-            Expression::Call(func, args) => {
-                        
-                        self.bytecode.push(ByteCode::CALL(func.clone()));
-                        
-                    }
-            Expression::Unary(op, expr) => {}
-            Expression::Grouping(group) => {
-                        self.compile_expression(&group);
-                    }
-            Expression::Instance(t, expressions) => {
-                
+                self.bytecode.push(ByteCode::GETVARLOCAL(literal.clone()));
+                self.bytecode.push(ByteCode::GETFROMREF);
+            }
+            Expression::Literal(literal) => match literal {
+                TokenLiteral::Identifier(ident) => {
+                    self.bytecode.push(ByteCode::GETVARLOCAL(ident.clone()));
+                }
+                TokenLiteral::Value(v) => self.bytecode.push(ByteCode::PUSH(v.clone())),
             },
+            Expression::Binary(op, lhs, rhs) => {
+                self.compile_expression(rhs);
+                self.compile_expression(lhs);
+
+                match op {
+                    BinOpCode::ADD => self.bytecode.push(ByteCode::ADD),
+                    BinOpCode::SUB => self.bytecode.push(ByteCode::SUB),
+                    BinOpCode::DIV => self.bytecode.push(ByteCode::DIV),
+                    BinOpCode::MULT => self.bytecode.push(ByteCode::MULT),
+                    BinOpCode::EQ => self.bytecode.push(ByteCode::EQUALS),
+                    BinOpCode::GE => self.bytecode.push(ByteCode::EQGREAT),
+                    BinOpCode::LE => self.bytecode.push(ByteCode::EQLESS),
+                    BinOpCode::LT => self.bytecode.push(ByteCode::LESSER),
+                    BinOpCode::GT => self.bytecode.push(ByteCode::GREATER),
+                    _ => {}
+                }
+            }
+            Expression::Call(func, args) => {
+                for arg in args {
+                    self.compile_expression(arg);
+                }
+                self.bytecode
+                    .push(ByteCode::CALL(func.clone(), args.len() as u64));
+            }
+            Expression::Unary(op, expr) => {
+                self.compile_expression(expr);
+                match op {
+                    crate::frontend::ast::UnaryOpCode::NEG => self.bytecode.push(ByteCode::NEGATE),
+                    crate::frontend::ast::UnaryOpCode::NOT => self.bytecode.push(ByteCode::NOT),
+                }
+            }
+            Expression::Grouping(group) => {
+                self.compile_expression(&group);
+            }
+            Expression::Instance(_t, _expressionss) => {}
         }
     }
 }
-

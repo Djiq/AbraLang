@@ -9,6 +9,7 @@ pub mod compiler;
 pub mod frontend;
 pub mod optimizer;
 pub mod runtime;
+#[cfg(test)]
 pub mod test;
 
 // Re-export key components for easier use if this were a library

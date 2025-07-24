@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::runtime::types::*;
+use crate::compiler::typecheck::Type;
 use crate::runtime::value::*;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -33,13 +33,13 @@ pub enum ByteCode {
     SAVEVARLOCAL(String),
     GETVARGLOBAL(String),
     SAVEVARGLOBAL(String),
-    DEFVAR(String,Type),
+    DEFVAR(String, Type),
     DROPVAR(String),
-    CALL(String),
-    SHOW,
+    CALL(String, u64),
     RET(bool),
     EXIT,
-    INSTANCE(Type,usize),
+    INSTANCE(Type, usize),
     GETFROMREF,
     SAVETOREF,
+    NOT,
 }

@@ -1,8 +1,18 @@
-use crate::compiler::{ByteCode, Code};
+use crate::{
+    compiler::{
+        typecheck::{AbraTypeDefinition, Type},
+        ByteCode, Code,
+    },
+    runtime::inbuilt::generate_inbuilt_function_hashmap,
+};
 use anyhow::*;
 use std::{collections::HashMap, io::BufRead, rc::Rc, sync::Mutex};
 
-use super::{object::{Ref, RefHeader}, types::{ObjectType, Type}, value::Value};
+use super::{
+    object::{Ref, RefHeader},
+    // types::{ObjectType, Type}, // Old type system import
+    value::Value,
+};
 
 /*
     R0 - LONG-LASTING REGISTER 0
@@ -22,15 +32,26 @@ use super::{object::{Ref, RefHeader}, types::{ObjectType, Type}, value::Value};
 pub struct ByteCodeMachine {
     bytecode: Vec<ByteCode>,
     labels: HashMap<String, usize>,
+
     registers: [Value; 16],
     global_variables: HashMap<String, Value>,
     stack_frames: Vec<StackFrame>,
     stack: [Value; 1028],
+
     debug_mode: bool,
     debug_run: bool,
     debug_show_stack: bool,
     debug_show_bytecode: bool,
     debug_breakpoints: Vec<usize>,
+    // This should now use the new AbraTypeDefinition from compiler::typecheck
+    abra_types: Vec<AbraTypeDefinition>,
+    inbuilt_functions: HashMap<
+        String,
+        (
+            crate::compiler::typecheck::FunctionSignature,
+            Rc<dyn Fn(&mut ByteCodeMachine, u64) -> anyhow::Result<()>>,
+        ),
+    >,
 }
 
 struct StackFrame {
@@ -75,6 +96,8 @@ impl ByteCodeMachine {
             debug_show_bytecode: false,
             debug_show_stack: false,
             debug_breakpoints: Vec::new(),
+            abra_types: Vec::new(),
+            inbuilt_functions: generate_inbuilt_function_hashmap(),
         };
         let start_index = slf.labels["_start"];
         slf.registers[11] = Value::Integer(start_index as i64);
@@ -85,9 +108,11 @@ impl ByteCodeMachine {
         slf
     }
 
-    fn instance(&mut self, typ: ObjectType, values: Vec<Value>) -> Ref {
+    fn instance(&mut self, typ: Type, values: Vec<Value>) -> Ref {
         Ref::instance_with(Rc::new(Mutex::new(RefHeader::instance_with_initializer(
-            typ, values
+            typ,
+            values,
+            &self.abra_types,
         ))))
     }
 
@@ -126,7 +151,7 @@ impl ByteCodeMachine {
             let stack_index = self.registers[10].expect_int().unwrap();
             let mut i = stack_index;
             while i >= 0 && i + 10 >= stack_index {
-                if  i == stack_index  {
+                if i == stack_index {
                     println!("{} | {} << HEAD", i, &self.stack[i as usize]);
                 } else {
                     println!("{} | {}", i, &self.stack[i as usize]);
@@ -205,7 +230,7 @@ impl ByteCodeMachine {
         }
     }
 
-    fn pop_from_stack(&mut self) -> anyhow::Result<Value> {
+    pub fn pop_from_stack(&mut self) -> anyhow::Result<Value> {
         let stack_index = self.registers[10].expect_int()? as usize;
         let ret = Ok(self.stack[stack_index - 1].clone());
         self.registers[10] = self.registers[10].clone() - Value::Integer(1);
@@ -213,7 +238,7 @@ impl ByteCodeMachine {
         ret
     }
 
-    fn push_to_stack(&mut self, value: &Value) -> anyhow::Result<()> {
+    pub fn push_to_stack(&mut self, value: &Value) -> anyhow::Result<()> {
         let stack_index = self.registers[10].expect_int()? as usize;
         self.stack[stack_index] = value.clone();
         self.registers[10] = self.registers[10].clone() + Value::Integer(1);
@@ -247,7 +272,7 @@ impl ByteCodeMachine {
                 Ok(true)
             }
             ByteCode::POP => {
-                let val = self.pop_from_stack()?;
+                self.pop_from_stack()?;
                 Ok(true)
             }
             ByteCode::ADD => {
@@ -272,10 +297,6 @@ impl ByteCodeMachine {
                 let a = self.pop_from_stack()?;
                 let b = self.pop_from_stack()?;
                 self.push_to_stack(&(a / b))?;
-                Ok(true)
-            }
-            ByteCode::SHOW => {
-                print!("{}", self.pop_from_stack()?);
                 Ok(true)
             }
             ByteCode::JMPTO(label) => {
@@ -375,11 +396,6 @@ impl ByteCodeMachine {
             ByteCode::SAVEVARGLOBAL(name) => {
                 let a = self.pop_from_stack()?;
                 if self.global_variables.contains_key(&name) {
-                    let val = self
-                        .global_variables
-                        .get(&name)
-                        .ok_or(anyhow!("Bad variable name while saving a variable!"))?
-                        .clone();
                     *self
                         .global_variables
                         .get_mut(&name)
@@ -416,18 +432,6 @@ impl ByteCodeMachine {
                     .local_variables
                     .contains_key(&name);
                 if b {
-                    let val = self
-                        .stack_frames
-                        .last_mut()
-                        .ok_or(anyhow!(
-                            "Attempted to access stack frames while none are allocated!"
-                        ))?
-                        .local_variables
-                        .get(&name)
-                        .ok_or(anyhow!(
-                            "Attempted to access stack frame variables while none are allocated!"
-                        ))?
-                        .clone();
                     *self
                         .stack_frames
                         .last_mut()
@@ -472,7 +476,15 @@ impl ByteCodeMachine {
 
                 Ok(true)
             }
-            ByteCode::CALL(func) => {
+            ByteCode::CALL(func, argc) => {
+                if self.inbuilt_functions.contains_key(&func) {
+                    self.inbuilt_functions.get(&func).unwrap().1.clone()(self, argc)?;
+                    return Ok(true);
+                }
+                let mut argv = Vec::new();
+                for _ in 0..argc {
+                    argv.push(self.pop_from_stack()?);
+                }
                 self.stack_frames.push(StackFrame::new(
                     index as i64,
                     self.registers[10].expect_int()?,
@@ -480,6 +492,7 @@ impl ByteCodeMachine {
                 ));
                 let new_bc_index = self.labels[&func] as i64 - 1;
                 self.registers[11] = Value::Integer(new_bc_index);
+
                 Ok(true)
             }
             ByteCode::RET(return_value) => {
@@ -499,11 +512,7 @@ impl ByteCodeMachine {
                 for _ in 0..argc {
                     acc.push(self.pop_from_stack()?);
                 }
-                let obj_type = match typ {
-                    Type::Object(object_type) => object_type,
-                    _ => ObjectType::BoxedValue,
-                };
-                let rf = self.instance(obj_type,acc);
+                let rf = self.instance(typ, acc);
                 self.push_to_stack(&Value::Ref(rf))?;
                 Ok(true)
             }
@@ -525,7 +534,7 @@ impl ByteCodeMachine {
 
                 Ok(true)
             }
-            ByteCode::DEFVAR(string,t) => {
+            ByteCode::DEFVAR(string, _t) => {
                 let val = self.pop_from_stack()?;
                 self.stack_frames
                     .last_mut()
@@ -556,7 +565,12 @@ impl ByteCodeMachine {
                 let b = self.pop_from_stack()?;
                 self.push_to_stack(&Value::Integer(a.expect_int()? % b.expect_int()?))?;
                 Ok(true)
-            } // _ => Ok(true),
+            }
+            ByteCode::NOT => {
+                let val = self.pop_from_stack()?;
+                self.push_to_stack(&Value::Bool(!val.cast_to_bool()?))?;
+                Ok(true)
+            }
         }
     }
 }

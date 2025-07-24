@@ -1,5 +1,7 @@
 //! Runtime components: VM, Value, Type, Object systems.
 
+mod debug;
+pub mod inbuilt;
 pub mod object;
 pub mod types;
 pub mod value;

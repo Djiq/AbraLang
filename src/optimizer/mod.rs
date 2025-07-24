@@ -8,8 +8,8 @@
 
 // --- AST Optimizer Module ---
 mod ast_optimizer {
-     // Use items from optimizer::mod.rs
-     // Import specific AST nodes relative to crate root
+    // Use items from optimizer::mod.rs
+    // Import specific AST nodes relative to crate root
 
     // ... content of ast_optimizer module ...
     // Ensure internal `use` statements reference correctly (e.g. StaticValue from runtime::value)
@@ -17,11 +17,11 @@ mod ast_optimizer {
 
 // --- Bytecode Optimizer Module ---
 mod bytecode_optimizer {
-     // Use items from optimizer::mod.rs
-     // Import specific bytecodes relative to crate root
-     // If using helpers like try_evaluate_binary_op
-     // If using helpers like try_evaluate_binary_op
+    // Use items from optimizer::mod.rs
+    // Import specific bytecodes relative to crate root
+    // If using helpers like try_evaluate_binary_op
+    // If using helpers like try_evaluate_binary_op
 
     // ... content of bytecode_optimizer module ...
-     // Ensure internal `use` statements reference correctly
+    // Ensure internal `use` statements reference correctly
 }

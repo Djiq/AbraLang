@@ -1,8 +1,8 @@
 use std::{fmt::Display, iter::Peekable, str::CharIndices};
 
-use serde::{Deserialize, Serialize};
-use anyhow::{anyhow, Result};
 use crate::runtime::value::StaticValue;
+use anyhow::{anyhow, Result};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, PartialOrd)]
 pub enum Token {
@@ -55,6 +55,12 @@ pub enum Token {
     Loop,
     New,
     EndOfFile,
+    Class,
+
+    And,
+    AndAnd,
+    Or,
+    OrOr,
 }
 
 impl Display for Token {
@@ -67,14 +73,14 @@ impl Display for Token {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, PartialOrd)]
 pub enum TokenLiteral {
     Identifier(String),
-    Value(StaticValue)
+    Value(StaticValue),
 }
 
 impl TokenLiteral {
     pub fn to_static_value(&self) -> StaticValue {
         match self {
             TokenLiteral::Identifier(_) => StaticValue::Null,
-            TokenLiteral::Value(val) => val.clone()
+            TokenLiteral::Value(val) => val.clone(),
         }
     }
 }
@@ -86,19 +92,39 @@ impl Display for TokenLiteral {
     }
 }
 
-pub trait TokenName { fn variant_name(&self) -> &'static str; }
+pub trait TokenName {
+    fn variant_name(&self) -> &'static str;
+}
 impl TokenName for Token {
     fn variant_name(&self) -> &'static str {
-         match self {
-            Token::DColon => "::", Token::Colon => ":", Token::Comma => ",",
-            Token::LParen => "(", Token::RParen => ")", Token::LBracket => "[",
-            Token::RBracket => "]", Token::Plus => "+", Token::PlusEquals => "+=",
-            Token::Minus => "-", Token::MinusEquals => "-=", Token::Slash => "/",
-            Token::SlashEquals => "/=", Token::Star => "*", Token::StarEquals => "*=",
-            Token::Equals => "=", Token::EqualsEquals => "==", Token::Greater => ">",
-            Token::Lesser => "<", Token::EqualsGreater => ">=", Token::EqualsLesser => "<=",
-            Token::RArrow => "->", Token::LArrow => "<-", Token::EndLine => "EndLine",
-            Token::Indent => "Indent", Token::Dedent => "Dedent", Token::Bang => "!",
+        match self {
+            Token::DColon => "::",
+            Token::Colon => ":",
+            Token::Comma => ",",
+            Token::LParen => "(",
+            Token::RParen => ")",
+            Token::LBracket => "[",
+            Token::RBracket => "]",
+            Token::Plus => "+",
+            Token::PlusEquals => "+=",
+            Token::Minus => "-",
+            Token::MinusEquals => "-=",
+            Token::Slash => "/",
+            Token::SlashEquals => "/=",
+            Token::Star => "*",
+            Token::StarEquals => "*=",
+            Token::Equals => "=",
+            Token::EqualsEquals => "==",
+            Token::Greater => ">",
+            Token::Lesser => "<",
+            Token::EqualsGreater => ">=",
+            Token::EqualsLesser => "<=",
+            Token::RArrow => "->",
+            Token::LArrow => "<-",
+            Token::EndLine => "EndLine",
+            Token::Indent => "Indent",
+            Token::Dedent => "Dedent",
+            Token::Bang => "!",
             Token::BangEq => "!=",
             Token::Literal(TokenLiteral::Identifier(_)) => "Identifier",
             Token::Literal(TokenLiteral::Value(StaticValue::Integer(_))) => "IntegerLiteral",
@@ -107,14 +133,29 @@ impl TokenName for Token {
             Token::Literal(TokenLiteral::Value(StaticValue::Bool(_))) => "BoolLiteral",
             Token::Literal(TokenLiteral::Value(StaticValue::String(_))) => "StringLiteral",
             Token::Literal(TokenLiteral::Value(StaticValue::Null)) => "NullLiteral",
-            Token::Func => "func", Token::Int => "int", Token::Float => "float", Token::Char => "char",
-            Token::Bool => "bool", Token::String => "string", Token::Print => "print",
-            Token::Return => "return", Token::If => "if", Token::Else => "else",
-            Token::For => "for", Token::While => "while", Token::Do => "do",
-            Token::Loop => "loop", Token::New => "new", Token::EndOfFile => "EndOfFile",
+            Token::Func => "func",
+            Token::Int => "int",
+            Token::Float => "float",
+            Token::Char => "char",
+            Token::Bool => "bool",
+            Token::String => "string",
+            Token::Print => "print",
+            Token::Return => "return",
+            Token::If => "if",
+            Token::Else => "else",
+            Token::For => "for",
+            Token::While => "while",
+            Token::Do => "do",
+            Token::Loop => "loop",
+            Token::New => "new",
+            Token::EndOfFile => "EndOfFile",
             Token::Let => "let",
-            // Add other variants if defined
-         }
+            Token::Class => "class",
+            Token::And => "&",
+            Token::AndAnd => "&&",
+            Token::Or => "|",
+            Token::OrOr => "||",
+        }
     }
 }
 
@@ -137,7 +178,6 @@ enum IndentStyle {
     Tabs,
 }
 
-
 impl<'a> Tokenizer<'a> {
     pub fn new(input: &'a str) -> Tokenizer<'a> {
         Tokenizer {
@@ -159,12 +199,11 @@ impl<'a> Tokenizer<'a> {
         let mut end_idx = start_index;
 
         if let Some(&(idx, _)) = self.characters.peek() {
-             current_idx = idx;
-             end_idx = idx;
+            current_idx = idx;
+            end_idx = idx;
         } else {
             return (start_index, &self.input[start_index..start_index]);
         }
-
 
         while let Some(&(idx, ch)) = self.characters.peek() {
             if condition(ch) {
@@ -177,9 +216,14 @@ impl<'a> Tokenizer<'a> {
         (end_idx, &self.input[start_index..end_idx])
     }
 
-    fn consume_identifier(&mut self, start_index: usize, first_char: char) -> (usize, Token, usize) {
+    fn consume_identifier(
+        &mut self,
+        start_index: usize,
+        first_char: char,
+    ) -> (usize, Token, usize) {
         let text_start_index = start_index + first_char.len_utf8();
-        let (end_index, text) = self.consume_while(text_start_index, |c| c.is_ascii_alphanumeric() || c == '_');
+        let (end_index, text) =
+            self.consume_while(text_start_index, |c| c.is_ascii_alphanumeric() || c == '_');
         let full_id = format!("{}{}", first_char, text);
 
         let token = match full_id.as_str() {
@@ -189,7 +233,7 @@ impl<'a> Tokenizer<'a> {
             "char" => Token::Char,
             "bool" => Token::Bool,
             "string" => Token::String,
-            "print" => Token::Print,
+            //"print" => Token::Print,
             "return" => Token::Return,
             "if" => Token::If,
             "else" => Token::Else,
@@ -201,14 +245,18 @@ impl<'a> Tokenizer<'a> {
             "true" => Token::Literal(TokenLiteral::Value(StaticValue::Bool(true))),
             "false" => Token::Literal(TokenLiteral::Value(StaticValue::Bool(false))),
             "let" => Token::Let,
+            "class" => Token::Class,
             _ => Token::Literal(TokenLiteral::Identifier(full_id)),
         };
 
         (start_index, token, end_index)
     }
 
-
-    fn consume_number(&mut self, start_index: usize, first_char: char) -> Result<(usize, Token, usize)> {
+    fn consume_number(
+        &mut self,
+        start_index: usize,
+        first_char: char,
+    ) -> Result<(usize, Token, usize)> {
         let mut end_index = start_index + first_char.len_utf8();
         let mut is_float = false;
         let mut num_str_buf = String::with_capacity(10);
@@ -216,9 +264,9 @@ impl<'a> Tokenizer<'a> {
 
         while let Some(&(idx, ch)) = self.characters.peek() {
             if ch.is_ascii_digit() {
-                 end_index = idx + ch.len_utf8();
-                 num_str_buf.push(ch);
-                 self.characters.next();
+                end_index = idx + ch.len_utf8();
+                num_str_buf.push(ch);
+                self.characters.next();
             } else {
                 break;
             }
@@ -227,7 +275,10 @@ impl<'a> Tokenizer<'a> {
         if let Some(&(idx_dot, '.')) = self.characters.peek() {
             let mut ahead_peek = self.characters.clone();
             ahead_peek.next();
-            if ahead_peek.peek().map_or(false, |&(_, c)| c.is_ascii_digit()) {
+            if ahead_peek
+                .peek()
+                .map_or(false, |&(_, c)| c.is_ascii_digit())
+            {
                 is_float = true;
                 self.characters.next();
                 end_index = idx_dot + '.'.len_utf8();
@@ -235,9 +286,9 @@ impl<'a> Tokenizer<'a> {
 
                 while let Some(&(idx_frac, ch_frac)) = self.characters.peek() {
                     if ch_frac.is_ascii_digit() {
-                         end_index = idx_frac + ch_frac.len_utf8();
-                         num_str_buf.push(ch_frac);
-                         self.characters.next();
+                        end_index = idx_frac + ch_frac.len_utf8();
+                        num_str_buf.push(ch_frac);
+                        self.characters.next();
                     } else {
                         break;
                     }
@@ -249,13 +300,31 @@ impl<'a> Tokenizer<'a> {
 
         if is_float {
             match number_str.parse::<f64>() {
-                Ok(f) => Ok((start_index, Token::Literal(TokenLiteral::Value(StaticValue::Float(f))), end_index)),
-                Err(e) => Err(anyhow!("Invalid float literal '{}' at index {}: {}", number_str, start_index, e)),
+                Ok(f) => Ok((
+                    start_index,
+                    Token::Literal(TokenLiteral::Value(f.into())),
+                    end_index,
+                )),
+                Err(e) => Err(anyhow!(
+                    "Invalid float literal '{}' at index {}: {}",
+                    number_str,
+                    start_index,
+                    e
+                )),
             }
         } else {
-             match number_str.parse::<i64>() {
-                Ok(i) => Ok((start_index, Token::Literal(TokenLiteral::Value(StaticValue::Integer(i))), end_index)),
-                Err(e) => Err(anyhow!("Invalid integer literal '{}' at index {}: {}", number_str, start_index, e)),
+            match number_str.parse::<i64>() {
+                Ok(i) => Ok((
+                    start_index,
+                    Token::Literal(TokenLiteral::Value(StaticValue::Integer(i))),
+                    end_index,
+                )),
+                Err(e) => Err(anyhow!(
+                    "Invalid integer literal '{}' at index {}: {}",
+                    number_str,
+                    start_index,
+                    e
+                )),
             }
         }
     }
@@ -268,81 +337,136 @@ impl<'a> Tokenizer<'a> {
             match self.characters.next() {
                 Some((idx, '"')) => {
                     let end_index = idx + '"'.len_utf8();
-                    return Ok((start_index, Token::Literal(TokenLiteral::Value(StaticValue::String(content))), end_index));
+                    return Ok((
+                        start_index,
+                        Token::Literal(TokenLiteral::Value(StaticValue::String(content))),
+                        end_index,
+                    ));
                 }
                 Some((idx, '\\')) => {
-                     current_idx = idx + '\\'.len_utf8();
-                     match self.characters.next() {
-                         Some((idx_esc, 'n')) => { content.push('\n'); current_idx = idx_esc + 'n'.len_utf8(); },
-                         Some((idx_esc, 't')) => { content.push('\t'); current_idx = idx_esc + 't'.len_utf8(); },
-                         Some((idx_esc, '\\')) => { content.push('\\'); current_idx = idx_esc + '\\'.len_utf8(); },
-                         Some((idx_esc, '"')) => { content.push('"'); current_idx = idx_esc + '"'.len_utf8(); },
-                         Some((idx_esc, other)) => {
-                             return Err(anyhow!("Invalid escape sequence '\\{}' in string literal starting at index {}", other, idx));
-                         }
-                         None => {
-                            return Err(anyhow!("Unterminated string literal starting at index {}", start_index));
-                         }
-                     }
+                    current_idx = idx + '\\'.len_utf8();
+                    match self.characters.next() {
+                        Some((idx_esc, 'n')) => {
+                            content.push('\n');
+                            current_idx = idx_esc + 'n'.len_utf8();
+                        }
+                        Some((idx_esc, 't')) => {
+                            content.push('\t');
+                            current_idx = idx_esc + 't'.len_utf8();
+                        }
+                        Some((idx_esc, '\\')) => {
+                            content.push('\\');
+                            current_idx = idx_esc + '\\'.len_utf8();
+                        }
+                        Some((idx_esc, '"')) => {
+                            content.push('"');
+                            current_idx = idx_esc + '"'.len_utf8();
+                        }
+                        Some((idx_esc, other)) => {
+                            return Err(anyhow!("Invalid escape sequence '\\{}' in string literal starting at index {}", other, idx));
+                        }
+                        None => {
+                            return Err(anyhow!(
+                                "Unterminated string literal starting at index {}",
+                                start_index
+                            ));
+                        }
+                    }
                 }
                 Some((idx, ch)) => {
                     content.push(ch);
                     current_idx = idx + ch.len_utf8();
                 }
                 None => {
-                    return Err(anyhow!("Unterminated string literal starting at index {}", start_index));
+                    return Err(anyhow!(
+                        "Unterminated string literal starting at index {}",
+                        start_index
+                    ));
                 }
             }
         }
     }
 
-     fn consume_char(&mut self, start_index: usize) -> Result<(usize, Token, usize)> {
+    fn consume_char(&mut self, start_index: usize) -> Result<(usize, Token, usize)> {
         let char_val: char;
         let pos_after_char: usize;
 
         match self.characters.next() {
-            Some((idx, '\\')) => {
-                match self.characters.next() {
-                    Some((idx_esc, 'n')) => { char_val = '\n'; pos_after_char = idx_esc + 'n'.len_utf8(); },
-                    Some((idx_esc, 't')) => { char_val = '\t'; pos_after_char = idx_esc + 't'.len_utf8(); },
-                    Some((idx_esc, '\\')) => { char_val = '\\'; pos_after_char = idx_esc + '\\'.len_utf8(); },
-                    Some((idx_esc, '\'')) => { char_val = '\''; pos_after_char = idx_esc + '\''.len_utf8(); },
-                    Some((idx_esc, other)) => {
-                        return Err(anyhow!("Invalid escape sequence '\\{}' in char literal at index {}", other, idx));
-                    }
-                    None => {
-                        return Err(anyhow!("Unterminated char literal (EOF after escape) starting at index {}", start_index));
-                    }
+            Some((idx, '\\')) => match self.characters.next() {
+                Some((idx_esc, 'n')) => {
+                    char_val = '\n';
+                    pos_after_char = idx_esc + 'n'.len_utf8();
                 }
-            }
+                Some((idx_esc, 't')) => {
+                    char_val = '\t';
+                    pos_after_char = idx_esc + 't'.len_utf8();
+                }
+                Some((idx_esc, '\\')) => {
+                    char_val = '\\';
+                    pos_after_char = idx_esc + '\\'.len_utf8();
+                }
+                Some((idx_esc, '\'')) => {
+                    char_val = '\'';
+                    pos_after_char = idx_esc + '\''.len_utf8();
+                }
+                Some((idx_esc, other)) => {
+                    return Err(anyhow!(
+                        "Invalid escape sequence '\\{}' in char literal at index {}",
+                        other,
+                        idx
+                    ));
+                }
+                None => {
+                    return Err(anyhow!(
+                        "Unterminated char literal (EOF after escape) starting at index {}",
+                        start_index
+                    ));
+                }
+            },
             Some((idx, '\'')) => {
-                 return Err(anyhow!("Empty char literal at index {}", start_index));
+                return Err(anyhow!("Empty char literal at index {}", start_index));
             }
             Some((idx, ch)) => {
                 char_val = ch;
                 pos_after_char = idx + ch.len_utf8();
             }
             None => {
-                return Err(anyhow!("Unterminated char literal (EOF after opening quote) starting at index {}", start_index));
+                return Err(anyhow!(
+                    "Unterminated char literal (EOF after opening quote) starting at index {}",
+                    start_index
+                ));
             }
         }
 
         match self.characters.next() {
             Some((idx_close, '\'')) => {
                 let end_index = idx_close + '\''.len_utf8();
-                 Ok((start_index, Token::Literal(TokenLiteral::Value(StaticValue::Char(char_val))), end_index))
+                Ok((
+                    start_index,
+                    Token::Literal(TokenLiteral::Value(StaticValue::Char(char_val))),
+                    end_index,
+                ))
             }
-            Some((idx_bad, other)) => Err(anyhow!("Expected closing ' for char literal at index {}, found '{}'", pos_after_char, other)),
-            None => Err(anyhow!("Unterminated char literal (EOF before closing quote) starting at index {}", start_index)),
+            Some((idx_bad, other)) => Err(anyhow!(
+                "Expected closing ' for char literal at index {}, found '{}'",
+                pos_after_char,
+                other
+            )),
+            None => Err(anyhow!(
+                "Unterminated char literal (EOF before closing quote) starting at index {}",
+                start_index
+            )),
         }
     }
-
 
     fn calculate_indent_level(&mut self) -> Result<(usize, usize)> {
         let mut level = 0;
         let mut style = IndentStyle::Undetermined;
         let mut space_count = 0;
-        let start_pos = self.characters.peek().map_or(self.input.len(), |(idx, _)| *idx);
+        let start_pos = self
+            .characters
+            .peek()
+            .map_or(self.input.len(), |(idx, _)| *idx);
         let mut pos_after_indent = start_pos;
 
         loop {
@@ -364,7 +488,7 @@ impl<'a> Tokenizer<'a> {
                             }
                         }
                         IndentStyle::Tabs => {
-                             let err_pos = idx;
+                            let err_pos = idx;
                             return Err(anyhow!(
                                 "Mixed indentation: Found space at index {} after using tabs for indentation on this line.", err_pos
                             ));
@@ -372,7 +496,7 @@ impl<'a> Tokenizer<'a> {
                     }
                 }
                 Some(&(idx, '\t')) => {
-                     pos_after_indent = idx + '\t'.len_utf8();
+                    pos_after_indent = idx + '\t'.len_utf8();
                     match style {
                         IndentStyle::Undetermined => {
                             style = IndentStyle::Tabs;
@@ -424,9 +548,11 @@ impl<'i> Iterator for Tokenizer<'i> {
             if self.needs_indent_check {
                 self.needs_indent_check = false;
 
-                 let indent_start_pos = self.characters.peek().map_or(self.input.len(), |(idx, _)| *idx);
-                 self.current_token_start_pos = indent_start_pos;
-
+                let indent_start_pos = self
+                    .characters
+                    .peek()
+                    .map_or(self.input.len(), |(idx, _)| *idx);
+                self.current_token_start_pos = indent_start_pos;
 
                 let (current_level, pos_after_indent) = match self.calculate_indent_level() {
                     Ok(result) => result,
@@ -434,25 +560,23 @@ impl<'i> Iterator for Tokenizer<'i> {
                 };
                 self.current_token_start_pos = pos_after_indent;
 
-
-                 let is_blank_or_comment = match self.characters.peek() {
+                let is_blank_or_comment = match self.characters.peek() {
                     None => true,
                     Some(&(_, '\n')) => true,
                     Some(&(_, '/')) => {
-                         let mut ahead_peek = self.characters.clone();
-                         ahead_peek.next();
-                         ahead_peek.peek().map_or(false, |&(_, c)| c == '/')
+                        let mut ahead_peek = self.characters.clone();
+                        ahead_peek.next();
+                        ahead_peek.peek().map_or(false, |&(_, c)| c == '/')
                     }
                     _ => false,
-                 };
+                };
 
-                 if is_blank_or_comment {
-                      if let Some(&(_, '\n')) = self.characters.peek() {
-                            self.needs_indent_check = true;
-                      }
-                      continue;
-                 }
-
+                if is_blank_or_comment {
+                    if let Some(&(_, '\n')) = self.characters.peek() {
+                        self.needs_indent_check = true;
+                    }
+                    continue;
+                }
 
                 let last_level = *self.indent_stack.last().unwrap();
 
@@ -473,7 +597,7 @@ impl<'i> Iterator for Tokenizer<'i> {
                     }
 
                     if *self.indent_stack.last().unwrap() != current_level {
-                         return Some(Err(anyhow!(
+                        return Some(Err(anyhow!(
                             "Inconsistent indentation: Dedented to level {} at index {}, which does not match any previous indentation level. Known levels: {:?}",
                             current_level, indent_start_pos, self.indent_stack
                         )));
@@ -495,8 +619,8 @@ impl<'i> Iterator for Tokenizer<'i> {
                         let eof_pos = self.input.len();
                         self.current_token_start_pos = eof_pos;
                         while *self.indent_stack.last().unwrap() > 0 {
-                             self.indent_stack.pop();
-                             self.pending_dedents += 1;
+                            self.indent_stack.pop();
+                            self.pending_dedents += 1;
                         }
                         if self.pending_dedents > 0 {
                             self.pending_dedents -= 1;
@@ -532,27 +656,47 @@ impl<'i> Iterator for Tokenizer<'i> {
                         '[' => Ok((start_index, Token::LBracket, end_index)),
                         ']' => Ok((start_index, Token::RBracket, end_index)),
                         ',' => Ok((start_index, Token::Comma, end_index)),
-                         ':' => {
-                             if self.characters.peek().map(|&(_, c)| c == ':').unwrap_or(false) {
+                        ':' => {
+                            if self
+                                .characters
+                                .peek()
+                                .map(|&(_, c)| c == ':')
+                                .unwrap_or(false)
+                            {
                                 self.characters.next();
                                 Ok((start_index, Token::DColon, start_index + 2))
                             } else {
                                 Ok((start_index, Token::Colon, end_index))
                             }
-                         }
+                        }
                         '+' => {
-                            if self.characters.peek().map(|&(_, c)| c == '=').unwrap_or(false) {
+                            if self
+                                .characters
+                                .peek()
+                                .map(|&(_, c)| c == '=')
+                                .unwrap_or(false)
+                            {
                                 self.characters.next();
                                 Ok((start_index, Token::PlusEquals, start_index + 2))
                             } else {
                                 Ok((start_index, Token::Plus, end_index))
                             }
                         }
-                         '-' => {
-                            if self.characters.peek().map(|&(_, c)| c == '=').unwrap_or(false) {
+                        '-' => {
+                            if self
+                                .characters
+                                .peek()
+                                .map(|&(_, c)| c == '=')
+                                .unwrap_or(false)
+                            {
                                 self.characters.next();
                                 Ok((start_index, Token::MinusEquals, start_index + 2))
-                            } else if self.characters.peek().map(|&(_, c)| c == '>').unwrap_or(false) {
+                            } else if self
+                                .characters
+                                .peek()
+                                .map(|&(_, c)| c == '>')
+                                .unwrap_or(false)
+                            {
                                 self.characters.next();
                                 Ok((start_index, Token::RArrow, start_index + 2))
                             } else {
@@ -560,37 +704,62 @@ impl<'i> Iterator for Tokenizer<'i> {
                             }
                         }
                         '*' => {
-                             if self.characters.peek().map(|&(_, c)| c == '=').unwrap_or(false) {
+                            if self
+                                .characters
+                                .peek()
+                                .map(|&(_, c)| c == '=')
+                                .unwrap_or(false)
+                            {
                                 self.characters.next();
                                 Ok((start_index, Token::StarEquals, start_index + 2))
                             } else {
                                 Ok((start_index, Token::Star, end_index))
                             }
                         }
-                         '/' => {
-                             if self.characters.peek().map(|&(_, c)| c == '=').unwrap_or(false) {
+                        '/' => {
+                            if self
+                                .characters
+                                .peek()
+                                .map(|&(_, c)| c == '=')
+                                .unwrap_or(false)
+                            {
                                 self.characters.next();
                                 Ok((start_index, Token::SlashEquals, start_index + 2))
-                            } else if self.characters.peek().map(|&(_, c)| c == '/').unwrap_or(false) {
+                            } else if self
+                                .characters
+                                .peek()
+                                .map(|&(_, c)| c == '/')
+                                .unwrap_or(false)
+                            {
                                 self.characters.next();
                                 let comment_start = start_index + 2;
-                                let (_comment_end, _) = self.consume_while(comment_start, |c| c != '\n');
+                                let (_comment_end, _) =
+                                    self.consume_while(comment_start, |c| c != '\n');
                                 continue;
-                            }
-                            else {
+                            } else {
                                 Ok((start_index, Token::Slash, end_index))
                             }
                         }
-                         '=' => {
-                            if self.characters.peek().map(|&(_, c)| c == '=').unwrap_or(false) {
+                        '=' => {
+                            if self
+                                .characters
+                                .peek()
+                                .map(|&(_, c)| c == '=')
+                                .unwrap_or(false)
+                            {
                                 self.characters.next();
                                 Ok((start_index, Token::EqualsEquals, start_index + 2))
                             } else {
                                 Ok((start_index, Token::Equals, end_index))
                             }
                         }
-                         '>' => {
-                            if self.characters.peek().map(|&(_, c)| c == '=').unwrap_or(false) {
+                        '>' => {
+                            if self
+                                .characters
+                                .peek()
+                                .map(|&(_, c)| c == '=')
+                                .unwrap_or(false)
+                            {
                                 self.characters.next();
                                 Ok((start_index, Token::EqualsGreater, start_index + 2))
                             } else {
@@ -598,18 +767,33 @@ impl<'i> Iterator for Tokenizer<'i> {
                             }
                         }
                         '<' => {
-                            if self.characters.peek().map(|&(_, c)| c == '=').unwrap_or(false) {
+                            if self
+                                .characters
+                                .peek()
+                                .map(|&(_, c)| c == '=')
+                                .unwrap_or(false)
+                            {
                                 self.characters.next();
                                 Ok((start_index, Token::EqualsLesser, start_index + 2))
-                             } else if self.characters.peek().map(|&(_, c)| c == '-').unwrap_or(false) {
+                            } else if self
+                                .characters
+                                .peek()
+                                .map(|&(_, c)| c == '-')
+                                .unwrap_or(false)
+                            {
                                 self.characters.next();
                                 Ok((start_index, Token::LArrow, start_index + 2))
                             } else {
                                 Ok((start_index, Token::Lesser, end_index))
                             }
                         }
-                         '!' => {
-                            if self.characters.peek().map(|&(_, c)| c == '=').unwrap_or(false) {
+                        '!' => {
+                            if self
+                                .characters
+                                .peek()
+                                .map(|&(_, c)| c == '=')
+                                .unwrap_or(false)
+                            {
                                 self.characters.next();
                                 Ok((start_index, Token::BangEq, start_index + 2))
                             } else {
@@ -623,9 +807,13 @@ impl<'i> Iterator for Tokenizer<'i> {
                         c if c.is_ascii_digit() => self.consume_number(start_index, c),
 
                         c if c.is_ascii_alphabetic() || c == '_' => {
-                             Ok(self.consume_identifier(start_index, c))
+                            Ok(self.consume_identifier(start_index, c))
                         }
-                         _ => Err(anyhow!("Unexpected character '{}' at index {}", current_char, start_index)),
+                        _ => Err(anyhow!(
+                            "Unexpected character '{}' at index {}",
+                            current_char,
+                            start_index
+                        )),
                     };
                     return Some(result);
                 }
