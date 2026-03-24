@@ -1,14 +1,13 @@
 use std::{
     collections::HashMap,
-    fmt::{write, Display},
+    fmt::Display,
 };
 
-use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     frontend::{
-        ast::{BinOpCode, Expression, Function, Item, Parameter, Statement, UnaryOpCode},
+        ast::{BinOpCode, Expression, Item, Parameter, Statement, UnaryOpCode},
         tokenizer::TokenLiteral,
     },
     runtime::{inbuilt::generate_inbuilt_function_hashmap, value::StaticValue},
@@ -446,7 +445,7 @@ impl<'a> TypeChecker<'a> {
                             )));
                     }
                 }
-                Statement::Set(name, expr) => {
+                Statement::Set(_,name, expr) => {
                     if !scope_vars.contains_key(name) {
                         self.messages
                             .push(TypeCheckerMessage::Error(anyhow::anyhow!(

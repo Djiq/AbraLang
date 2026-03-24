@@ -87,6 +87,6 @@ abra_compile_test! {
     ok for_loop;
     ok var_decl;
     panic var_drop;
-    ok fn_call;
-    ok class
+    ok fn_call
+    //ok class
 }

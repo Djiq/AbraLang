@@ -1,6 +1,6 @@
 use crate::{
     compiler::typecheck::{
-        Composite, FunctionSignature, Primitives, Type, FLOAT_TYPE, INTEGER_TYPE, STRING_TYPE,
+        FunctionSignature, Type, FLOAT_TYPE, INTEGER_TYPE, STRING_TYPE,
     },
     runtime::{value::Value, vm::ByteCodeMachine},
 };

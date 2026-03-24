@@ -1,11 +1,11 @@
-use std::{any, collections::HashMap};
+use std::collections::HashMap;
 
 use anyhow::*;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     compiler::{
-        typecheck::{AbraTypeDefinition, FunctionSignature, Type, TypeChecker, TypeCheckerMessage},
+        typecheck::{AbraTypeDefinition, FunctionSignature, TypeChecker, TypeCheckerMessage},
         ByteCode,
     },
     frontend::{

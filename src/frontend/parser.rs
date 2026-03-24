@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::VecDeque,
     iter::Peekable,
 };
 
@@ -415,7 +415,7 @@ impl<L: Iterator<Item = LexerItem>> Parser<L> {
         self.expect(Token::Equals)?;
         let e = self.parse_expression()?;
         self.expect(Token::EndLine)?; // Expect EOL
-        Ok(Statement::Set(n, e))
+        Ok(Statement::Set(None,n, e))
     }
     // Add parse_compound_assignment if needed
 
@@ -491,7 +491,7 @@ impl<L: Iterator<Item = LexerItem>> Parser<L> {
                     let (n, _, _) = self.expect_identifier()?;
                     self.expect(Token::Equals)?;
                     let e = self.parse_expression()?;
-                    Ok(Statement::Set(n, e)) // NO EOL
+                    Ok(Statement::Set(None,n, e)) // NO EOL
                 } else {
                     // Just an expression (e.g., func_call())
                     let e = self.parse_expression()?;
@@ -530,7 +530,7 @@ impl<L: Iterator<Item = LexerItem>> Parser<L> {
                     let (n, _, _) = self.expect_identifier()?;
                     self.expect(Token::Equals)?; // Or expect compound token
                     let e = self.parse_expression()?;
-                    Ok(Statement::Set(n, e)) // NO EOL
+                    Ok(Statement::Set(None,n, e)) // NO EOL
                                              // Handle compound assignment Statement creation if needed
                 } else {
                     // Just an expression

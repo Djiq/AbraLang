@@ -1,3 +1,4 @@
 func main() -> int
     print(sqrt(4.0))
+    print('\n')
     return 0

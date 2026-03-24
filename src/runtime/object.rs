@@ -7,7 +7,7 @@ use std::{
 };
 
 use crate::{
-    compiler::typecheck::{AbraTypeDefinition, Composite, Primitives, Type},
+    compiler::typecheck::{AbraTypeDefinition, Composite, Type},
     runtime::value::Value,
 };
 

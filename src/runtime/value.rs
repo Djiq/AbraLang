@@ -6,14 +6,11 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    compiler::typecheck::{BOOL_TYPE, CHAR_TYPE, FLOAT_TYPE, INTEGER_TYPE, STRING_TYPE},
-    runtime::object::Ref,
-};
+use crate::runtime::object::Ref;
 use anyhow::*;
 use ordered_float::OrderedFloat;
 
-use crate::compiler::typecheck::{Composite, Primitives, Type};
+use crate::compiler::typecheck::{Primitives, Type};
 
 macro_rules! value_implements {
     ($t:ty,$t_func:ident) => {
