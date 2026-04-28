@@ -1,0 +1,3 @@
+FROM abralang-build
+
+ENTRYPOINT ["/bin/bash", "-c", "timeout --foreground 30s cargo test --release -- --nocapture"]

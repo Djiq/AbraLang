@@ -1,0 +1,9 @@
+FROM rust:latest
+
+RUN apt-get update && apt-get install -y git
+
+WORKDIR /usr/src/abralang
+
+RUN git clone --branch master https://github.com/Djiq/AbraLang.git .
+
+RUN cargo build --release
