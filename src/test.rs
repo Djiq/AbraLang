@@ -77,7 +77,7 @@ macro_rules! abra_compile_test {
 }
 abra_compile_test! {
     ok ok;
-    fail fail;
+    fail fail
     //ok if_true;
     //ok if_false;
     //ok if_branch1;
