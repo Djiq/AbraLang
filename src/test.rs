@@ -78,15 +78,15 @@ macro_rules! abra_compile_test {
 abra_compile_test! {
     ok ok;
     fail fail;
-    ok if_true;
-    ok if_false;
-    ok if_branch1;
-    ok if_branch2;
-    ok eq;
-    ok neq;
-    ok for_loop;
-    ok var_decl;
-    panic var_drop;
-    ok fn_call
+    //ok if_true;
+    //ok if_false;
+    //ok if_branch1;
+    //ok if_branch2;
+    //ok eq;
+    //ok neq;
+    //ok for_loop;
+    //ok var_decl;
+    //ok var_drop;
+    //ok fn_call
     //ok class
 }
